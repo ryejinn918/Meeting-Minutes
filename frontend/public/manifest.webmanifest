@@ -1,0 +1,14 @@
+{
+  "name": "MeetFlow",
+  "short_name": "MeetFlow",
+  "description": "팀의 회의를 기록하고 실행으로 연결하는 AI 회의록 도구",
+  "start_url": "/login",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
+

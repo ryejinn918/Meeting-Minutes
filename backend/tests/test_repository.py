@@ -1,0 +1,106 @@
+from typing import Any
+from uuid import UUID
+
+import pytest
+
+from app.db.repositories import MeetFlowRepository
+
+
+class RecordingClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.created_rows: dict[str, dict[str, Any]] = {}
+
+    async def request(self, method: str, path: str, **kwargs: Any) -> tuple[Any, dict]:
+        self.calls.append({"method": method, "path": path, **kwargs})
+        if method == "POST":
+            self.created_rows[path] = kwargs["json"]
+            return None, {}
+        row = self.created_rows.get(path)
+        return ([row] if row else []), {}
+
+
+@pytest.mark.asyncio
+async def test_create_team_derives_creator_from_service_user() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+
+    result = await repository.create_team("AI Team", user_id)
+
+    assert result["name"] == "AI Team"
+    assert client.calls[0]["path"] == "teams"
+    assert client.calls[0]["json"]["name"] == "AI Team"
+    assert client.calls[0]["json"]["created_by"] == str(user_id)
+    assert UUID(client.calls[0]["json"]["id"])
+    assert client.calls[0]["prefer"] == "return=minimal"
+    assert client.calls[1]["method"] == "GET"
+    assert client.calls[1]["params"]["id"] == f'eq.{client.calls[0]["json"]["id"]}'
+
+
+@pytest.mark.asyncio
+async def test_create_meeting_avoids_insert_returning_rls_check() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    values = {
+        "team_id": "22222222-2222-4222-8222-222222222222",
+        "title": "Weekly Meeting",
+        "meeting_at": "2026-11-11T00:00:00+00:00",
+        "source_type": "direct",
+        "created_by": "11111111-1111-4111-8111-111111111111",
+        "processing_status": "draft",
+    }
+
+    result = await repository.create_meeting(values)
+
+    assert result["title"] == "Weekly Meeting"
+    assert client.calls[0]["path"] == "meetings"
+    assert client.calls[0]["prefer"] == "return=minimal"
+    assert UUID(client.calls[0]["json"]["id"])
+    assert client.calls[1]["method"] == "GET"
+
+
+@pytest.mark.asyncio
+async def test_create_transcript_preserves_original_and_reads_after_insert() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    meeting_id = UUID("22222222-2222-4222-8222-222222222222")
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+
+    result = await repository.create_transcript(meeting_id, user_id, "Original text")
+
+    assert result["original_text"] == "Original text"
+    assert result["edited_text"] == "Original text"
+    assert client.calls[0]["path"] == "meeting_transcripts"
+    assert client.calls[0]["prefer"] == "return=minimal"
+    assert UUID(client.calls[0]["json"]["id"])
+    assert client.calls[1]["method"] == "GET"
+
+
+@pytest.mark.asyncio
+async def test_draft_action_items_use_direct_null_filter() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    meeting_id = UUID("22222222-2222-4222-8222-222222222222")
+
+    await repository.list_action_items(meeting_id)
+
+    params = client.calls[0]["params"]
+    assert params["source_run_id"] == "is.null"
+    assert "or" not in params
+
+
+@pytest.mark.asyncio
+async def test_analyzed_action_items_include_current_run_and_manual_items() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    meeting_id = UUID("22222222-2222-4222-8222-222222222222")
+    run_id = UUID("33333333-3333-4333-8333-333333333333")
+
+    await repository.list_action_items(meeting_id, run_id)
+
+    params = client.calls[0]["params"]
+    assert params["or"] == (
+        f"(source_run_id.eq.{run_id},source_run_id.is.null)"
+    )
+    assert "source_run_id" not in params
