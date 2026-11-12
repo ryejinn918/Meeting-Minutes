@@ -12,9 +12,9 @@ import { queryKeys } from "@/lib/query-keys";
 
 export function MeetingsPage() {
   const { teamId = "" } = useParams(); const [search, setSearch] = useState("");
-  const meetings = useQuery({ queryKey: queryKeys.meetings(teamId), queryFn: () => apiService.getMeetings(teamId) });
-  const team = useQuery({ queryKey: queryKeys.team(teamId), queryFn: () => apiService.getTeam(teamId) });
-  const me = useQuery({ queryKey: queryKeys.me, queryFn: apiService.getMe });
+  const meetings = useQuery({ queryKey: queryKeys.meetings(teamId), queryFn: () => apiService.getMeetings(teamId), staleTime: 60_000 });
+  const team = useQuery({ queryKey: queryKeys.team(teamId), queryFn: () => apiService.getTeam(teamId), staleTime: 5 * 60_000 });
+  const me = useQuery({ queryKey: queryKeys.me, queryFn: apiService.getMe, staleTime: 5 * 60_000 });
   const filtered = meetings.data?.filter((meeting) => meeting.title.toLowerCase().includes(search.toLowerCase())) ?? [];
   return <><section className="mb-6"><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">{team.data?.name ?? "팀 회의록"}</p><div className="mt-2 flex items-end justify-between gap-3"><div><h1 className="text-2xl font-extrabold tracking-tight text-slate-950">안녕하세요, {me.data?.name ?? "팀원"}님 👋</h1><p className="mt-1 text-sm text-slate-500">팀의 최근 회의를 확인해 보세요.</p></div><Button asChild className="shrink-0" size="icon"><Link aria-label="새 회의록" to={`/t/${teamId}/meetings/new`}><Plus className="h-5 w-5" /></Link></Button></div></section>
     <label className="relative mt-5 block"><Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" /><Input className="pl-10" onChange={(e) => setSearch(e.target.value)} placeholder="회의록 검색" value={search} /></label>

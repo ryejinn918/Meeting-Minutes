@@ -7,6 +7,7 @@ from app.core.security import AuthenticatedUser
 from app.db.repositories import MeetFlowRepository
 from app.schemas.meetings import (
     MeetingCreate,
+    MeetingListItemResponse,
     MeetingNotesUpdate,
     MeetingResponse,
     MeetingUpdate,
@@ -32,10 +33,10 @@ async def create_meeting(
     return await service.create(payload)
 
 
-@router.get("", response_model=list[MeetingResponse])
+@router.get("", response_model=list[MeetingListItemResponse])
 async def list_meetings(
     team_id: UUID = Query(...), service: MeetingService = Depends(get_service)
-) -> list[MeetingResponse]:
+) -> list[MeetingListItemResponse]:
     return await service.list(team_id)
 
 

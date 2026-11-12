@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from app.db.repositories import MeetFlowRepository
 from app.schemas.meetings import (
     ActionItemResponse,
     MeetingCreate,
+    MeetingListItemResponse,
     MeetingNotesUpdate,
     MeetingResponse,
     MeetingUpdate,
@@ -39,11 +41,18 @@ class MeetingService:
         )
         return await self._hydrate(meeting)
 
-    async def list(self, team_id: UUID) -> list[MeetingResponse]:
+    async def list(self, team_id: UUID) -> list[MeetingListItemResponse]:
         await self.authorization.require_team_member(team_id)
         rows = await self.repository.list_meetings(team_id)
-        profiles = await self.repository.get_profiles({UUID(row["created_by"]) for row in rows})
-        return [await self._hydrate(row, profiles) for row in rows]
+        profiles, shared_meeting_ids = await asyncio.gather(
+            self.repository.get_profiles({UUID(row["created_by"]) for row in rows}),
+            self.repository.list_shared_meeting_ids(
+                self.user.id, {UUID(row["id"]) for row in rows}
+            ),
+        )
+        return [
+            self._summarize(row, profiles, shared_meeting_ids) for row in rows
+        ]
 
     async def get(self, meeting_id: UUID) -> MeetingResponse:
         meeting = await self._get_visible(meeting_id)
@@ -181,44 +190,53 @@ class MeetingService:
         await self.authorization.require_team_member(UUID(meeting["team_id"]))
         return meeting
 
-    async def _hydrate(
-        self, meeting: dict, profiles: dict[str, dict] | None = None
-    ) -> MeetingResponse:
+    async def _hydrate(self, meeting: dict) -> MeetingResponse:
         creator_id = UUID(meeting["created_by"])
-        profile_map = profiles or await self.repository.get_profiles({creator_id})
-        profile = profile_map.get(str(creator_id))
-        if profile is None:
-            raise AppError(502, "PROFILE_NOT_FOUND", "회의록 작성자 정보를 찾을 수 없습니다.")
-        transcript = await self.repository.get_transcript(
-            UUID(meeting["current_transcript_id"]) if meeting.get("current_transcript_id") else None
-        )
         transcript_id = (
             UUID(meeting["current_transcript_id"])
             if meeting.get("current_transcript_id")
             else None
         )
-        speakers = await self.repository.list_transcript_speakers(transcript_id)
-        segments = await self.repository.list_transcript_segments(transcript_id)
+        notes_id = (
+            UUID(meeting["current_notes_id"])
+            if meeting.get("current_notes_id")
+            else None
+        )
+        (
+            profile_map,
+            transcript,
+            speakers,
+            segments,
+            notes,
+            shared_ids,
+        ) = await asyncio.gather(
+            self.repository.get_profiles({creator_id}),
+            self.repository.get_transcript(transcript_id),
+            self.repository.list_transcript_speakers(transcript_id),
+            self.repository.list_transcript_segments(transcript_id),
+            self.repository.get_notes(notes_id),
+            self.repository.list_shared_member_ids(UUID(meeting["id"])),
+        )
+        profile = profile_map.get(str(creator_id))
+        if profile is None:
+            raise AppError(502, "PROFILE_NOT_FOUND", "회의록 작성자 정보를 찾을 수 없습니다.")
         speaker_names = {
             str(item["id"]): item["display_name"] for item in speakers
         }
-        notes = await self.repository.get_notes(
-            UUID(meeting["current_notes_id"]) if meeting.get("current_notes_id") else None
-        )
         source_run_id = (
             UUID(notes["derived_from_run_id"])
             if notes and notes.get("derived_from_run_id")
             else None
         )
+        actions_task = self.repository.list_action_items(
+            UUID(meeting["id"]), source_run_id
+        )
         if source_run_id:
-            ai_run = await self.repository.get_ai_run(source_run_id)
-            actions = await self.repository.list_action_items(
-                UUID(meeting["id"]), source_run_id
+            ai_run, actions = await asyncio.gather(
+                self.repository.get_ai_run(source_run_id), actions_task
             )
         else:
-            ai_run = None
-            actions = await self.repository.list_action_items(UUID(meeting["id"]))
-        shared_ids = await self.repository.list_shared_member_ids(UUID(meeting["id"]))
+            ai_run, actions = None, await actions_task
         meeting_fields = {key: value for key, value in meeting.items() if key != "created_by"}
         return MeetingResponse(
             **meeting_fields,
@@ -270,4 +288,31 @@ class MeetingService:
             ],
             shared_member_ids=shared_ids,
             ai_generated_at=(ai_run or {}).get("completed_at"),
+        )
+
+    def _summarize(
+        self,
+        meeting: dict,
+        profiles: dict[str, dict],
+        shared_meeting_ids: set[UUID],
+    ) -> MeetingListItemResponse:
+        creator_id = UUID(meeting["created_by"])
+        profile = profiles.get(str(creator_id))
+        if profile is None:
+            raise AppError(502, "PROFILE_NOT_FOUND", "회의록 작성자 정보를 찾을 수 없습니다.")
+        return MeetingListItemResponse(
+            id=meeting["id"],
+            team_id=meeting["team_id"],
+            title=meeting["title"],
+            meeting_at=meeting["meeting_at"],
+            created_by=UserSummary(
+                id=profile["id"],
+                name=profile["display_name"],
+                email=profile["email"],
+                avatar_url=profile.get("avatar_url"),
+            ),
+            processing_status=meeting["processing_status"],
+            version=meeting["version"],
+            is_mine=creator_id == self.user.id,
+            is_shared_with_me=UUID(meeting["id"]) in shared_meeting_ids,
         )

@@ -19,12 +19,18 @@ class TeamService:
 
     async def list(self) -> list[TeamResponse]:
         memberships = await self.repository.list_memberships(self.user.id)
+        counts = await self.repository.count_team_members(
+            {UUID(membership["team_id"]) for membership in memberships}
+        )
         result: list[TeamResponse] = []
         for membership in memberships:
             team = membership["teams"]
-            members = await self.repository.list_team_members(UUID(team["id"]))
             result.append(
-                TeamResponse(**team, member_count=len(members), my_role=membership["role"])
+                TeamResponse(
+                    **team,
+                    member_count=counts.get(str(team["id"]), 0),
+                    my_role=membership["role"],
+                )
             )
         return result
 

@@ -75,6 +75,19 @@ export interface Meeting {
   version: number;
 }
 
+export type MeetingListItem = Pick<
+  Meeting,
+  | "id"
+  | "team_id"
+  | "title"
+  | "meeting_at"
+  | "created_by"
+  | "processing_status"
+  | "is_mine"
+  | "is_shared_with_me"
+  | "version"
+>;
+
 export interface TranscriptSpeaker {
   id: string;
   provider_label: string;

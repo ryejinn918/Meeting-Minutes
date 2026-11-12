@@ -1,5 +1,7 @@
 import asyncio
 import hashlib
+import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,6 +28,7 @@ from app.schemas.files import (
 from app.schemas.jobs import JobResponse
 from app.services.audio_processing import (
     merge_transcript_chunks,
+    probe_audio_duration,
     split_audio_file,
 )
 from app.services.authorization import AuthorizationService
@@ -43,6 +46,8 @@ from app.services.file_content import (
     validate_upload_metadata,
 )
 from app.storage.client import SupabaseStorageClient
+
+logger = logging.getLogger("uvicorn.error")
 
 NON_RETRYABLE_FILE_CODES = {
     "FILE_EMPTY",
@@ -270,6 +275,15 @@ class FileIngestionService:
             return
         meeting_id = UUID(job["meeting_id"])
         file_id = UUID(job["file_id"])
+        job_started = time.perf_counter()
+        logger.info(
+            "file_job_started job_id=%s meeting_id=%s file_id=%s job_type=%s attempt=%s",
+            job_id,
+            meeting_id,
+            file_id,
+            job["job_type"],
+            int(job["attempt_count"]) + 1,
+        )
         try:
             await self.admin_job_repository.update_job(
                 job_id,
@@ -299,6 +313,13 @@ class FileIngestionService:
                     source,
                     max_bytes=int(file["size_bytes"]),
                 )
+                logger.info(
+                    "file_job_stage_completed job_id=%s stage=download "
+                    "elapsed_seconds=%.3f file_bytes=%s",
+                    job_id,
+                    time.perf_counter() - job_started,
+                    int(file["size_bytes"]),
+                )
                 validated = await self._validate_downloaded_file(source, file)
                 usage: dict[str, Any] = {
                     "source_size_bytes": int(file["size_bytes"]),
@@ -314,7 +335,8 @@ class FileIngestionService:
                     usage.update(stt_usage)
                 else:
                     content = await asyncio.to_thread(source.read_bytes)
-                    text = extract_document_text(
+                    text = await asyncio.to_thread(
+                        extract_document_text,
                         content,
                         validated.extension,
                         max_pdf_pages=self.settings.max_pdf_pages,
@@ -376,11 +398,34 @@ class FileIngestionService:
                     "finished_at": datetime.now(UTC).isoformat(),
                 },
             )
+            logger.info(
+                "file_job_completed job_id=%s job_type=%s elapsed_seconds=%.3f",
+                job_id,
+                job["job_type"],
+                time.perf_counter() - job_started,
+            )
         except STTProviderError as exc:
+            logger.warning(
+                "file_job_failed job_id=%s stage=stt code=%s elapsed_seconds=%.3f",
+                job_id,
+                exc.code,
+                time.perf_counter() - job_started,
+            )
             await self._fail(job_id, meeting_id, file_id, exc.code, exc.safe_message)
         except AppError as exc:
+            logger.warning(
+                "file_job_failed job_id=%s stage=application code=%s elapsed_seconds=%.3f",
+                job_id,
+                exc.code,
+                time.perf_counter() - job_started,
+            )
             await self._fail(job_id, meeting_id, file_id, exc.code, exc.message)
         except Exception:
+            logger.exception(
+                "file_job_failed job_id=%s stage=internal elapsed_seconds=%.3f",
+                job_id,
+                time.perf_counter() - job_started,
+            )
             await self._fail(
                 job_id,
                 meeting_id,
@@ -470,20 +515,55 @@ class FileIngestionService:
     ) -> tuple[TranscriptResult, dict[str, Any]]:
         source_size = source.stat().st_size
         if source_size <= self.settings.stt_direct_max_bytes:
-            content = await asyncio.to_thread(source.read_bytes)
-            result = await self.stt_provider.transcribe(
-                content,
-                filename=file["original_name"],
-                content_type=file["mime_type"],
+            probe_started = time.perf_counter()
+            logger.info(
+                "stt_audio_probe_started job_id=%s audio_bytes=%s",
+                job_id,
+                source_size,
             )
-            result = self._with_diarization(result, chunk_index=0, offset_seconds=0)
-            usage = {
-                "chunk_count": 1,
-                "processed_audio_bytes": len(content),
-                "provider_usage": [result.usage],
-            }
-            return result, usage
+            duration = await probe_audio_duration(
+                source,
+                timeout_seconds=self.settings.ffmpeg_timeout_seconds,
+            )
+            logger.info(
+                "stt_audio_probe_completed job_id=%s audio_seconds=%.3f "
+                "elapsed_seconds=%.3f",
+                job_id,
+                duration,
+                time.perf_counter() - probe_started,
+            )
+            if duration <= self.settings.stt_direct_max_seconds:
+                logger.info(
+                    "stt_plan job_id=%s mode=direct audio_seconds=%.3f audio_bytes=%s",
+                    job_id,
+                    duration,
+                    source_size,
+                )
+                content = await asyncio.to_thread(source.read_bytes)
+                result = await self.stt_provider.transcribe(
+                    content,
+                    filename=file["original_name"],
+                    content_type=file["mime_type"],
+                    duration_seconds=duration,
+                )
+                result = self._with_diarization(
+                    result, chunk_index=0, offset_seconds=0
+                )
+                usage = {
+                    "chunk_count": 1,
+                    "processed_audio_bytes": len(content),
+                    "audio_duration_seconds": round(duration, 3),
+                    "provider_usage": [result.usage],
+                }
+                return result, usage
 
+        split_started = time.perf_counter()
+        logger.info(
+            "stt_audio_split_started job_id=%s audio_bytes=%s chunk_seconds=%s",
+            job_id,
+            source_size,
+            self.settings.stt_chunk_seconds,
+        )
         split = await split_audio_file(
             source,
             temp_dir,
@@ -492,6 +572,15 @@ class FileIngestionService:
             max_chunks=self.settings.stt_max_chunks,
             max_audio_seconds=self.settings.stt_max_audio_seconds,
             max_chunk_bytes=self.settings.stt_direct_max_bytes,
+            process_timeout_seconds=self.settings.ffmpeg_timeout_seconds,
+        )
+        logger.info(
+            "stt_plan job_id=%s mode=chunked audio_seconds=%.3f chunk_count=%s "
+            "split_elapsed_seconds=%.3f",
+            job_id,
+            split.duration_seconds,
+            len(split.chunks),
+            time.perf_counter() - split_started,
         )
         cached_rows = await self.admin_job_repository.list_job_chunks(job_id)
         cached = {int(row["chunk_index"]): row for row in cached_rows}
@@ -502,9 +591,19 @@ class FileIngestionService:
         provider = "openai"
         model = self.settings.openai_stt_model
         for chunk in split.chunks:
+            chunk_started = time.perf_counter()
+            chunk_duration = chunk.end_seconds - chunk.start_seconds
             chunk_hash = await asyncio.to_thread(self._sha256_file, chunk.path)
             previous = cached.get(chunk.index)
             if previous and previous.get("chunk_sha256") == chunk_hash:
+                logger.info(
+                    "stt_chunk_reused job_id=%s chunk_index=%s chunk_count=%s "
+                    "audio_seconds=%.3f",
+                    job_id,
+                    chunk.index,
+                    len(split.chunks),
+                    chunk_duration,
+                )
                 texts.append(str(previous["transcript_text"]))
                 segment_chunks.append(deserialize_segments(previous.get("segments")))
                 provider_usage.append(
@@ -515,10 +614,20 @@ class FileIngestionService:
                 processed_bytes += chunk.path.stat().st_size
                 continue
             content = await asyncio.to_thread(chunk.path.read_bytes)
+            logger.info(
+                "stt_chunk_started job_id=%s chunk_index=%s chunk_count=%s "
+                "audio_seconds=%.3f chunk_bytes=%s",
+                job_id,
+                chunk.index,
+                len(split.chunks),
+                chunk_duration,
+                len(content),
+            )
             result = await self.stt_provider.transcribe(
                 content,
                 filename=chunk.path.name,
                 content_type="audio/mpeg",
+                duration_seconds=chunk_duration,
             )
             chunk_segments = offset_segments(
                 result.segments,
@@ -539,6 +648,14 @@ class FileIngestionService:
                 provider=result.provider,
                 model=result.model,
                 usage=chunk_usage,
+            )
+            logger.info(
+                "stt_chunk_completed job_id=%s chunk_index=%s chunk_count=%s "
+                "elapsed_seconds=%.3f",
+                job_id,
+                chunk.index,
+                len(split.chunks),
+                time.perf_counter() - chunk_started,
             )
             texts.append(result.text)
             segment_chunks.append(chunk_segments)

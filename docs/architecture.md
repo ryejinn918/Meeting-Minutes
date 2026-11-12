@@ -62,6 +62,14 @@ Render Free 배포에서도 프로세스 내부 `BackgroundTasks`는 서버 재�
 
 백그라운드 작업은 요청 사용자의 회의 관리 권한을 사용자 JWT로 먼저 검사한 뒤 서버 secret key를 사용한다. 최신 `sb_secret_...` 키는 JWT가 아니므로 PostgREST의 `apikey` 헤더에만 넣고, legacy service-role JWT일 때만 `Authorization: Bearer`를 사용한다. RLS 우회 여부와 별개로 PostgreSQL GRANT가 필요하므로 `202611110002_ai_worker_grants.sql`에서 분석에 필요한 테이블의 최소 권한만 `service_role`에 부여한다.
 
+### 1.3 조회 및 렌더링 성능 기준
+
+- 회의 목록 API는 카드에 필요한 식별자·제목·날짜·작성자·처리 상태·공유 여부만 반환하며 전문, 발화 구간, 요약과 액션아이템은 상세 API에서만 조회한다.
+- 상세 응답을 구성하는 transcript, speaker, segment, notes, share 조회는 권한 확인 후 독립적으로 병렬 실행한다. Supabase REST/Storage 호출은 FastAPI 프로세스의 제한된 keep-alive connection pool을 공유한다.
+- 프론트엔드는 TanStack Query 캐시를 사용하고 회의 카드에 포인터·키보드·터치 상호작용이 시작되면 상세 데이터를 prefetch한다. mutation 후에는 영향받은 query key만 갱신한다.
+- 화자 발화는 전문 탭에서만 렌더링하고 최초 100개 이후에는 사용자가 요청할 때 100개씩 추가한다. 화자 구간이 있으면 동일한 일반 전문을 읽기 화면에 중복 렌더링하지 않는다.
+- PDF 파싱, 해시 계산과 큰 파일 I/O 같은 CPU·blocking 작업은 event loop 밖에서 실행한다. FFmpeg는 단일 thread로 제한하여 Render Free의 다른 API 요청을 과도하게 방해하지 않게 한다.
+
 ## 2. 추천 폴더 구조
 
 ```text
@@ -162,6 +170,7 @@ Render Free 배포에서도 프로세스 내부 `BackgroundTasks`는 서버 재�
 ### 3.2 인덱스와 무결성
 
 - `team_members(user_id, status)`, `meetings(team_id, created_at desc)`, `meeting_shares(user_id, meeting_id)` 인덱스
+- 모바일 목록의 실제 정렬과 집계에 맞춰 `meetings(team_id, meeting_at desc) where deleted_at is null`, `team_members(team_id, joined_at) where status='active'` 인덱스를 사용한다.
 - `processing_jobs(meeting_id, created_at desc)`와 활성 작업 중복 방지 인덱스
 - `action_items(meeting_id, status, sort_order)` 인덱스
 - `storage_path` unique, `size_bytes > 0`, `due_date`는 nullable
@@ -205,7 +214,9 @@ FastAPI가 secret/service-role key를 사용할 때 RLS가 우회된다는 점�
 6. **저장**: 검증된 AI 출력은 `meeting_ai_runs`에 불변 저장하고, 별도 transaction으로 `meeting_notes`/`action_items` 편집본을 만든다.
 7. **상태/오류**: 각 단계 전후에 meeting/job 상태를 기록한다. UI에는 안전한 오류 코드와 재시도 행동만 노출하고 provider 원문 오류/키/본문은 로그에 남기지 않는다.
 
-OpenAI 공식 파일 전사 문서상 단일 요청 파일 제한은 25MB다. 원본은 Private Storage에 보존하고 서버는 전체 파일을 메모리에 올리지 않은 채 임시 파일로 스트리밍한다. 20MB를 넘는 음성은 FFmpeg로 mono 16kHz/48kbps MP3, 기본 10분 구간과 2초 중첩으로 변환한다. 각 조각은 20MB 이하인지 다시 검사해 순서대로 전사하고, 정확히 일치하는 경계 단어만 보수적으로 제거한다. 구간 결과는 `processing_job_chunks`에 저장해 서버 재시작 후 같은 job 재시도에서 완료 구간을 재호출하지 않는다. 기본 최대 길이는 4시간(24구간)이다. 참고: [OpenAI File transcription](https://developers.openai.com/api/docs/guides/speech-to-text).
+OpenAI 공식 파일 전사 문서상 단일 요청 파일 제한은 25MB다. 원본은 Private Storage에 보존하고 서버는 전체 파일을 메모리에 올리지 않은 채 임시 파일로 스트리밍한다. 20MB를 넘거나 재생시간이 5분을 넘는 음성은 FFmpeg로 mono 16kHz/48kbps MP3, 기본 10분 구간과 2초 중첩으로 변환한다. 각 조각은 20MB 이하인지 다시 검사해 순서대로 전사하고, 정확히 일치하는 경계 단어만 보수적으로 제거한다. 구간 결과는 `processing_job_chunks`에 저장해 서버 재시작 후 같은 job 재시도에서 완료 구간을 재호출하지 않는다. 기본 최대 길이는 4시간(24구간)이다. 참고: [OpenAI File transcription](https://developers.openai.com/api/docs/guides/speech-to-text).
+
+OpenAI 요청별 read timeout은 `max(OPENAI_TIMEOUT_SECONDS, audio_seconds * OPENAI_TIMEOUT_PER_AUDIO_SECOND)`로 계산하고 `OPENAI_TIMEOUT_MAX_SECONDS`에서 제한한다. 전체 전사 job에 단일 timeout을 적용하지 않으며 connect timeout만 제한적으로 자동 재시도한다. 요청 본문 전송 후 read timeout은 provider 처리가 완료됐을 가능성이 있으므로 같은 실행에서 즉시 재호출하지 않는다. 실패 job은 `failed`로 종료하고 사용자가 재시도하면 저장된 조각 checkpoint부터 이어간다. FFmpeg probe/변환은 별도의 `FFMPEG_TIMEOUT_SECONDS`를 사용한다.
 
 Supabase Free의 공식 Storage 파일 상한은 50MB이므로 기본 배포값은 50MiB다. 애플리케이션과 DB의 절대 하드캡은 100MiB이며, 100MiB를 사용하려면 Supabase 유료 플랜의 global/bucket limit과 프론트·백엔드 환경변수를 함께 올려야 한다. 6MB 초과 브라우저 업로드는 resumable TUS를 사용한다. 참고: [Supabase Storage file limits](https://supabase.com/docs/guides/storage/uploads/file-limits), [Resumable uploads](https://supabase.com/docs/guides/storage/uploads/resumable-uploads).
 
@@ -396,13 +407,19 @@ OPENAI_API_KEY=
 OPENAI_STT_MODEL=gpt-4o-transcribe-diarize
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_TIMEOUT_SECONDS=90
+OPENAI_TIMEOUT_PER_AUDIO_SECOND=0.6
+OPENAI_TIMEOUT_MAX_SECONDS=420
+OPENAI_CONNECT_TIMEOUT_SECONDS=10
+OPENAI_WRITE_TIMEOUT_SECONDS=60
 OPENAI_MAX_RETRIES=1
+FFMPEG_TIMEOUT_SECONDS=120
 STT_MODE=mock
 OPENROUTER_API_KEY=
 OPENROUTER_ANALYSIS_MODEL=deepseek/deepseek-v3.2
 AI_MODE=real
 MAX_AUDIO_BYTES=52428800
 STT_DIRECT_MAX_BYTES=20000000
+STT_DIRECT_MAX_SECONDS=300
 STT_CHUNK_SECONDS=600
 STT_CHUNK_OVERLAP_SECONDS=2
 STT_MAX_CHUNKS=24

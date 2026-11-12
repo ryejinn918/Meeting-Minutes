@@ -60,10 +60,12 @@ function DiarizedTranscript({
   editable: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [visibleCount, setVisibleCount] = useState(100);
   const [names, setNames] = useState<Record<string, string>>({});
   useEffect(() => {
     setNames(Object.fromEntries(speakers.map((speaker) => [speaker.id, speaker.display_name])));
   }, [speakers]);
+  useEffect(() => setVisibleCount(100), [meetingId, segments]);
   const rename = useMutation({
     mutationFn: ({ speakerId, displayName }: { speakerId: string; displayName: string }) =>
       apiService.updateTranscriptSpeaker(meetingId, speakerId, displayName),
@@ -81,7 +83,7 @@ function DiarizedTranscript({
         <Button disabled={rename.isPending || !(names[speaker.id] ?? "").trim()} onClick={() => rename.mutate({ speakerId: speaker.id, displayName: (names[speaker.id] ?? speaker.display_name).trim() })} size="sm" variant="outline">저장</Button>
       </div>)}</div>}
     {rename.isError && <p className="mt-3 text-sm text-rose-600">{rename.error.message}</p>}
-    <ol className="mt-5 space-y-3">{segments.map((segment) =>
+    <ol className="mt-5 space-y-3">{segments.slice(0, visibleCount).map((segment) =>
       <li className="rounded-xl bg-slate-50 p-4" key={segment.id}>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold tabular-nums text-indigo-600">[{segmentTime(segment.start_seconds)}–{segmentTime(segment.end_seconds)}]</span>
@@ -89,6 +91,7 @@ function DiarizedTranscript({
         </div>
         <p className="mt-2 break-words text-sm leading-7 text-slate-700">{segment.text}</p>
       </li>)}</ol>
+    {visibleCount < segments.length && <Button className="mt-4 w-full" onClick={() => setVisibleCount((value) => value + 100)} variant="outline">발언 더 보기 ({segments.length - visibleCount}개 남음)</Button>}
   </CardContent></Card>;
 }
 
@@ -101,9 +104,9 @@ export function MeetingDetailPage() {
   const [editing, setEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const meetingQuery = useQuery({ queryKey: queryKeys.meeting(id), queryFn: () => apiService.getMeeting(id) });
+  const meetingQuery = useQuery({ queryKey: queryKeys.meeting(id), queryFn: () => apiService.getMeeting(id), staleTime: 2 * 60_000 });
   const meeting = meetingQuery.data;
-  const teamQuery = useQuery({ queryKey: queryKeys.team(meeting?.team_id ?? "pending"), queryFn: () => apiService.getTeam(meeting!.team_id), enabled: Boolean(meeting) });
+  const teamQuery = useQuery({ queryKey: queryKeys.team(meeting?.team_id ?? "pending"), queryFn: () => apiService.getTeam(meeting!.team_id), enabled: Boolean(meeting), staleTime: 5 * 60_000 });
   const [draft, setDraft] = useState({ title: "", date: "", transcript: "", summary: "", discussions: "", decisions: "", followUps: "" });
 
   useEffect(() => {
@@ -183,7 +186,7 @@ export function MeetingDetailPage() {
     {analyze.error && <p className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{analyze.error.message}</p>}
     <MeetingTabs counts={{ actions: meeting.action_items.length }} onChange={setTab} value={tab}>
       {tab === "summary" && (meeting.summary ? (editing ? <Card><CardContent className="space-y-4"><p className="text-xs leading-5 text-slate-500">각 목록은 한 줄에 한 항목씩 입력하세요. 수정해도 처음 생성된 내용은 별도로 유지됩니다.</p><label className="block text-sm font-bold text-slate-700">핵심 요약<Textarea className="mt-2 min-h-32" onChange={(event) => setDraft((value) => ({ ...value, summary: event.target.value }))} value={draft.summary} /></label><label className="block text-sm font-bold text-slate-700">주요 논의사항<Textarea className="mt-2 min-h-28" onChange={(event) => setDraft((value) => ({ ...value, discussions: event.target.value }))} value={draft.discussions} /></label><label className="block text-sm font-bold text-slate-700">결정사항<Textarea className="mt-2 min-h-28" onChange={(event) => setDraft((value) => ({ ...value, decisions: event.target.value }))} value={draft.decisions} /></label><label className="block text-sm font-bold text-slate-700">후속 논의사항<Textarea className="mt-2 min-h-28" onChange={(event) => setDraft((value) => ({ ...value, followUps: event.target.value }))} value={draft.followUps} /></label><Button className="w-full" disabled={save.isPending || !draft.summary.trim()} onClick={() => save.mutate()}><Save className="h-4 w-4" />{save.isPending ? "저장 중..." : "정리 내용 저장"}</Button></CardContent></Card> : <div className="space-y-3"><Card className="border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 shadow-none"><CardContent><div className="flex items-center justify-between gap-3"><h3 className="flex items-center gap-2 text-sm font-bold text-indigo-950"><Sparkles className="h-4 w-4" />핵심 요약</h3><Badge className="bg-white/80 text-indigo-700">자동 정리 기반 편집본</Badge></div><p className="mt-3 text-sm leading-7 text-slate-700">{meeting.summary}</p></CardContent></Card><SectionCard items={meeting.key_discussions} title="주요 논의사항" /><SectionCard items={meeting.decisions} title="결정사항" tone="emerald" /><SectionCard items={meeting.follow_ups} title="후속 논의사항" tone="violet" /></div>) : <Card className="border-dashed shadow-none"><CardContent className="flex min-h-64 flex-col items-center justify-center text-center"><span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600"><Sparkles className="h-7 w-7" /></span><h3 className="mt-4 font-bold text-slate-900">회의 내용을 정리해 보세요</h3><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">{meeting.transcript_edited ? "회의 내용을 살펴보고 요약, 결정사항과 액션아이템을 정리합니다." : "먼저 회의 전문을 입력하고 저장해야 정리할 수 있습니다."}</p>{canManage && <Button className="mt-5" disabled={!meeting.transcript_edited || analyze.isPending || meeting.processing_status === "analyzing"} onClick={() => analyze.mutate()}><Sparkles className="h-4 w-4" />{analyze.isPending ? "정리 요청 중..." : meeting.processing_status === "analyzing" ? "정리 중..." : "회의록 정리하기"}</Button>} {!canManage && <p className="mt-4 text-xs text-slate-500">읽기 전용 회의록은 작성자 또는 팀 관리자만 정리할 수 있습니다.</p>}</CardContent></Card>)}
-      {tab === "transcript" && <Card><CardContent><div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-slate-900">전체 회의 내용</h3><Badge className="bg-emerald-50 text-emerald-700">실제 저장</Badge></div>{editing ? <><Textarea className="min-h-[26rem]" onChange={(event) => setDraft((value) => ({ ...value, transcript: event.target.value }))} value={draft.transcript} /><Button className="mt-4 w-full" disabled={save.isPending || !draft.title.trim() || !draft.transcript.trim()} onClick={() => save.mutate()}><Save className="h-4 w-4" />{save.isPending ? "저장 중..." : "변경사항 저장"}</Button></> : <div className="max-h-[34rem] overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-700">{meeting.transcript_edited || "저장된 회의 전문이 없습니다."}</div>}</CardContent></Card>}
+      {tab === "transcript" && (editing || meeting.transcript_segments.length === 0) && <Card><CardContent><div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-slate-900">전체 회의 내용</h3><Badge className="bg-emerald-50 text-emerald-700">실제 저장</Badge></div>{editing ? <><Textarea className="min-h-[26rem]" onChange={(event) => setDraft((value) => ({ ...value, transcript: event.target.value }))} value={draft.transcript} /><Button className="mt-4 w-full" disabled={save.isPending || !draft.title.trim() || !draft.transcript.trim()} onClick={() => save.mutate()}><Save className="h-4 w-4" />{save.isPending ? "저장 중..." : "변경사항 저장"}</Button></> : <div className="max-h-[34rem] overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-700">{meeting.transcript_edited || "저장된 회의 전문이 없습니다."}</div>}</CardContent></Card>}
       {tab === "actions" && <div className="space-y-3">{meeting.action_items.length ? meeting.action_items.map((item) => <ActionItemCard editable={false} item={item} key={item.id} />) : <Card className="shadow-none"><CardContent><p className="text-center text-sm text-slate-400">{meeting.summary ? "정리된 액션아이템이 없습니다." : "회의록을 정리하면 액션아이템이 표시됩니다."}</p></CardContent></Card>}</div>}
       {tab === "transcript" && !editing && meeting.transcript_segments.length > 0 && <DiarizedTranscript editable={canEdit} meetingId={id} segments={meeting.transcript_segments} speakers={meeting.transcript_speakers} />}
     </MeetingTabs>

@@ -3,7 +3,12 @@ from app.ai.stt.base import TranscriptResult, TranscriptSegment
 
 class MockSTTProvider:
     async def transcribe(
-        self, content: bytes, *, filename: str, content_type: str
+        self,
+        content: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        duration_seconds: float | None = None,
     ) -> TranscriptResult:
         del content, filename, content_type
         return TranscriptResult(

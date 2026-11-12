@@ -86,6 +86,25 @@ class MeetFlowRepository:
         )
         return rows
 
+    async def count_team_members(self, team_ids: set[UUID]) -> dict[str, int]:
+        if not team_ids:
+            return {}
+        ids = ",".join(str(team_id) for team_id in team_ids)
+        rows, _ = await self.client.request(
+            "GET",
+            "team_members",
+            params={
+                "select": "team_id",
+                "team_id": f"in.({ids})",
+                "status": "eq.active",
+            },
+        )
+        counts = {str(team_id): 0 for team_id in team_ids}
+        for row in rows:
+            team_id = str(row["team_id"])
+            counts[team_id] = counts.get(team_id, 0) + 1
+        return counts
+
     async def create_meeting(self, values: dict[str, Any]) -> dict[str, Any]:
         meeting_id = uuid4()
         await self.client.request(
@@ -446,3 +465,20 @@ class MeetFlowRepository:
             "GET", "meeting_shares", params={"select": "user_id", "meeting_id": f"eq.{meeting_id}"}
         )
         return [UUID(row["user_id"]) for row in rows]
+
+    async def list_shared_meeting_ids(
+        self, user_id: UUID, meeting_ids: set[UUID]
+    ) -> set[UUID]:
+        if not meeting_ids:
+            return set()
+        ids = ",".join(str(meeting_id) for meeting_id in meeting_ids)
+        rows, _ = await self.client.request(
+            "GET",
+            "meeting_shares",
+            params={
+                "select": "meeting_id",
+                "meeting_id": f"in.({ids})",
+                "user_id": f"eq.{user_id}",
+            },
+        )
+        return {UUID(row["meeting_id"]) for row in rows}

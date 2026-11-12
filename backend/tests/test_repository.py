@@ -105,3 +105,20 @@ async def test_analyzed_action_items_include_current_run_and_manual_items() -> N
         f"(source_run_id.eq.{run_id},source_run_id.is.null)"
     )
     assert "source_run_id" not in params
+
+
+@pytest.mark.asyncio
+async def test_team_member_counts_use_one_batched_query() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    first = UUID("22222222-2222-4222-8222-222222222222")
+    second = UUID("33333333-3333-4333-8333-333333333333")
+
+    await repository.count_team_members({first, second})
+
+    assert len(client.calls) == 1
+    params = client.calls[0]["params"]
+    assert params["select"] == "team_id"
+    assert params["status"] == "eq.active"
+    assert str(first) in params["team_id"]
+    assert str(second) in params["team_id"]

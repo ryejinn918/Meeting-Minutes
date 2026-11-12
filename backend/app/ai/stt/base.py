@@ -33,5 +33,10 @@ class STTProviderError(Exception):
 
 class STTProvider(Protocol):
     async def transcribe(
-        self, content: bytes, *, filename: str, content_type: str
+        self,
+        content: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        duration_seconds: float | None = None,
     ) -> TranscriptResult: ...

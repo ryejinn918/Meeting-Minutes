@@ -1,5 +1,7 @@
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -12,10 +14,23 @@ from app.core.settings import get_settings
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http_client = httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
+
+
 app = FastAPI(
     title="MeetFlow API",
     version="0.1.0",
     description="MeetFlow API with Supabase Auth and PostgreSQL persistence.",
+    lifespan=lifespan,
 )
 app.add_exception_handler(AppError, app_error_handler)
 

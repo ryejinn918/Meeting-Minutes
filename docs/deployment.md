@@ -79,12 +79,18 @@ STT_MODE=real
 
 ```dotenv
 OPENAI_TIMEOUT_SECONDS=90
+OPENAI_TIMEOUT_PER_AUDIO_SECOND=0.6
+OPENAI_TIMEOUT_MAX_SECONDS=420
+OPENAI_CONNECT_TIMEOUT_SECONDS=10
+OPENAI_WRITE_TIMEOUT_SECONDS=60
 OPENAI_MAX_RETRIES=1
+FFMPEG_TIMEOUT_SECONDS=120
 OPENROUTER_TIMEOUT_SECONDS=45
 OPENROUTER_MAX_RETRIES=1
 AI_STALE_JOB_SECONDS=300
 MAX_AUDIO_BYTES=52428800
 STT_DIRECT_MAX_BYTES=20000000
+STT_DIRECT_MAX_SECONDS=300
 STT_CHUNK_SECONDS=600
 STT_CHUNK_OVERLAP_SECONDS=2
 STT_MAX_CHUNKS=24
@@ -194,6 +200,9 @@ Render 공식 문서 기준으로 Free Web Service는 inbound traffic이 15분 �
 - 원본 파일은 먼저 Supabase Private Storage에 저장한다.
 - 직접 입력/STT/추출 원문과 AI 결과를 분리해 보존한다.
 - 작업 상태와 시도 횟수를 `processing_jobs`에 기록한다.
+- 20MB 이하 파일도 재생시간이 5분을 넘으면 조각 처리하여 단일 OpenAI 요청이 지나치게 길어지지 않게 한다.
+- OpenAI read timeout은 조각 재생시간에 비례해 90~420초 범위로 계산하며, read timeout은 같은 실행에서 즉시 재호출하지 않는다.
+- Render 로그에는 job ID, 단계, 조각 번호, 바이트 수, 재생시간과 소요시간만 남기고 파일명·회의 내용·API key는 남기지 않는다.
 - 동일 회의·작업 유형의 active 작업은 unique index로 중복 시작을 막는다.
 - 실패 작업과 `AI_STALE_JOB_SECONDS`보다 오래된 queued/processing 작업은 기존 처리 URL에서 재시도할 수 있다.
 - 회의가 이미 `ready`이고 현재 notes가 연결된 경우 분석 worker 재실행은 새 결과를 만들지 않고 기존 작업을 성공 처리한다.

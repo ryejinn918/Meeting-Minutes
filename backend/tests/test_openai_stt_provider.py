@@ -13,9 +13,10 @@ from app.core.settings import Settings
 class StubClient(AbstractAsyncContextManager["StubClient"]):
     queue: list[httpx.Response | Exception] = []
     requests: list[dict[str, Any]] = []
+    init_kwargs: list[dict[str, Any]] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
+        self.init_kwargs.append(kwargs)
 
     async def __aenter__(self) -> "StubClient":
         return self
@@ -35,6 +36,7 @@ class StubClient(AbstractAsyncContextManager["StubClient"]):
 def reset_stub(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     StubClient.queue = []
     StubClient.requests = []
+    StubClient.init_kwargs = []
     monkeypatch.setattr("app.ai.stt.openai_provider.httpx.AsyncClient", StubClient)
     yield
 
@@ -139,3 +141,35 @@ async def test_openai_stt_timeout_is_retryable() -> None:
 
     assert error.value.code == "STT_TIMEOUT"
     assert error.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_read_timeout_is_not_immediately_retried() -> None:
+    StubClient.queue = [httpx.ReadTimeout("timeout")]
+
+    with pytest.raises(STTProviderError) as error:
+        await OpenAISTTProvider(settings(retries=1)).transcribe(
+            b"ID3audio",
+            filename="meeting.mp3",
+            content_type="audio/mpeg",
+            duration_seconds=600,
+        )
+
+    assert error.value.code == "STT_TIMEOUT"
+    assert len(StubClient.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_long_audio_uses_duration_based_read_timeout() -> None:
+    StubClient.queue = [httpx.Response(200, json={"text": "회의 전사 결과"})]
+
+    await OpenAISTTProvider(settings()).transcribe(
+        b"ID3audio",
+        filename="meeting.mp3",
+        content_type="audio/mpeg",
+        duration_seconds=600,
+    )
+
+    timeout = StubClient.init_kwargs[0]["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.read == 360

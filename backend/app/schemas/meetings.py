@@ -83,6 +83,18 @@ class ActionItemResponse(BaseModel):
     status: Literal["todo", "in_progress", "done"]
 
 
+class MeetingListItemResponse(BaseModel):
+    id: UUID
+    team_id: UUID
+    title: str
+    meeting_at: datetime
+    created_by: UserSummary
+    processing_status: str
+    version: int
+    is_mine: bool
+    is_shared_with_me: bool
+
+
 class MeetingResponse(BaseModel):
     id: UUID
     team_id: UUID

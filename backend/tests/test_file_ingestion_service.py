@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.ai.stt.base import TranscriptResult
+from app.ai.stt.base import STTProviderError, TranscriptResult
 from app.core.errors import AppError
 from app.core.security import AuthenticatedUser
 from app.core.settings import Settings
@@ -217,10 +217,16 @@ async def test_large_audio_retry_reuses_completed_chunk(
         calls = 0
 
         async def transcribe(
-            self, content: bytes, *, filename: str, content_type: str
+            self,
+            content: bytes,
+            *,
+            filename: str,
+            content_type: str,
+            duration_seconds: float | None = None,
         ) -> TranscriptResult:
             self.calls += 1
             assert content == b"second-chunk"
+            assert duration_seconds == 300
             return TranscriptResult(
                 text="마지막 세 단어 다음 구간입니다",
                 provider="openai",
@@ -253,3 +259,236 @@ async def test_large_audio_retry_reuses_completed_chunk(
     assert [saved["chunk_index"] for saved in chunk_repository.saved] == [1]
     assert result.text == "첫 구간의 마지막 세 단어 다음 구간입니다"
     assert usage["chunk_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_short_audio_uses_direct_request_with_duration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "short.mp3"
+    source.write_bytes(b"short-audio")
+
+    async def fake_probe(*args: Any, **kwargs: Any) -> float:
+        return 90
+
+    class DurationProvider:
+        durations: list[float | None] = []
+
+        async def transcribe(
+            self,
+            content: bytes,
+            *,
+            filename: str,
+            content_type: str,
+            duration_seconds: float | None = None,
+        ) -> TranscriptResult:
+            self.durations.append(duration_seconds)
+            return TranscriptResult("short result", "openai", "test-model", "ko")
+
+    monkeypatch.setattr("app.services.file_ingestion.probe_audio_duration", fake_probe)
+    provider = DurationProvider()
+    ingestion = FileIngestionService(
+        user_repository=FileRepository(),  # type: ignore[arg-type]
+        user_job_repository=None,  # type: ignore[arg-type]
+        admin_repository=FileRepository(),  # type: ignore[arg-type]
+        admin_job_repository=None,  # type: ignore[arg-type]
+        storage=SuccessfulStorage(),  # type: ignore[arg-type]
+        stt_provider=provider,
+        user=AuthenticatedUser(id=USER_ID, email=None, access_token="token"),
+        settings=Settings(_env_file=None),
+    )
+
+    result, usage = await ingestion._transcribe_audio(
+        uuid4(),
+        source,
+        {"original_name": "short.mp3", "mime_type": "audio/mpeg"},
+        tmp_path,
+    )
+
+    assert result.text == "short result"
+    assert provider.durations == [90]
+    assert usage["audio_duration_seconds"] == 90
+
+
+@pytest.mark.asyncio
+async def test_small_compressed_long_audio_is_chunked_by_duration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "long.m4a"
+    source.write_bytes(b"compressed-long-audio")
+    chunk = tmp_path / "chunk-000.mp3"
+    chunk.write_bytes(b"converted-chunk")
+
+    async def fake_probe(*args: Any, **kwargs: Any) -> float:
+        return 900
+
+    async def fake_split(*args: Any, **kwargs: Any) -> AudioSplitResult:
+        return AudioSplitResult(
+            chunks=[AudioChunk(0, chunk, 0, 602)],
+            duration_seconds=900,
+        )
+
+    class EmptyChunkRepository:
+        saved: list[dict[str, Any]] = []
+
+        async def list_job_chunks(self, job_id: UUID) -> list[dict[str, Any]]:
+            return []
+
+        async def save_job_chunk(self, **values: Any) -> None:
+            self.saved.append(values)
+
+    class DurationProvider:
+        durations: list[float | None] = []
+
+        async def transcribe(
+            self,
+            content: bytes,
+            *,
+            filename: str,
+            content_type: str,
+            duration_seconds: float | None = None,
+        ) -> TranscriptResult:
+            self.durations.append(duration_seconds)
+            return TranscriptResult("long result", "openai", "test-model", "ko")
+
+    monkeypatch.setattr("app.services.file_ingestion.probe_audio_duration", fake_probe)
+    monkeypatch.setattr("app.services.file_ingestion.split_audio_file", fake_split)
+    chunks = EmptyChunkRepository()
+    provider = DurationProvider()
+    ingestion = FileIngestionService(
+        user_repository=FileRepository(),  # type: ignore[arg-type]
+        user_job_repository=chunks,  # type: ignore[arg-type]
+        admin_repository=FileRepository(),  # type: ignore[arg-type]
+        admin_job_repository=chunks,  # type: ignore[arg-type]
+        storage=SuccessfulStorage(),  # type: ignore[arg-type]
+        stt_provider=provider,
+        user=AuthenticatedUser(id=USER_ID, email=None, access_token="token"),
+        settings=Settings(_env_file=None),
+    )
+
+    result, usage = await ingestion._transcribe_audio(
+        uuid4(),
+        source,
+        {"original_name": "long.m4a", "mime_type": "audio/mp4"},
+        tmp_path,
+    )
+
+    assert result.text == "long result"
+    assert provider.durations == [602]
+    assert usage["chunk_count"] == 1
+    assert len(chunks.saved) == 1
+
+
+@pytest.mark.asyncio
+async def test_stt_timeout_marks_job_file_and_meeting_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id = uuid4()
+    file_id = uuid4()
+
+    class RunRepository(FileRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.meeting.update({"version": 1, "processing_status": "uploaded"})
+            self.file = {
+                "id": str(file_id),
+                "meeting_id": str(MEETING_ID),
+                "uploaded_by": str(USER_ID),
+                "storage_bucket": "meeting-files",
+                "storage_path": "private/source.mp3",
+                "original_name": "meeting.mp3",
+                "mime_type": "audio/mpeg",
+                "size_bytes": 8,
+                "sha256": "a" * 64,
+                "processing_status": "uploaded",
+            }
+            self.file_updates: list[dict[str, Any]] = []
+            self.meeting_updates: list[dict[str, Any]] = []
+
+        async def get_meeting_file(self, requested: UUID) -> dict[str, Any]:
+            assert requested == file_id
+            return self.file
+
+        async def update_meeting_file(
+            self, requested: UUID, values: dict[str, Any]
+        ) -> dict[str, Any]:
+            assert requested == file_id
+            self.file.update(values)
+            self.file_updates.append(values)
+            return self.file
+
+        async def update_meeting(
+            self, requested: UUID, version: int, values: dict[str, Any]
+        ) -> dict[str, Any]:
+            assert requested == MEETING_ID
+            self.meeting.update(values)
+            self.meeting["version"] = version + 1
+            self.meeting_updates.append(values)
+            return self.meeting
+
+    class JobRepository:
+        def __init__(self) -> None:
+            self.job = {
+                "id": str(job_id),
+                "meeting_id": str(MEETING_ID),
+                "file_id": str(file_id),
+                "job_type": "transcribe",
+                "status": "queued",
+                "attempt_count": 0,
+            }
+
+        async def get_job(self, requested: UUID) -> dict[str, Any]:
+            assert requested == job_id
+            return self.job
+
+        async def update_job(
+            self, requested: UUID, values: dict[str, Any]
+        ) -> dict[str, Any]:
+            assert requested == job_id
+            self.job.update(values)
+            return self.job
+
+    class DownloadStorage:
+        async def download_to_path(
+            self,
+            bucket: str,
+            path: str,
+            destination: Path,
+            *,
+            max_bytes: int,
+        ) -> int:
+            destination.write_bytes(b"ID3audio")
+            return 8
+
+    async def fake_validate(source: Path, file: dict[str, Any]) -> object:
+        return object()
+
+    async def fail_transcription(*args: Any, **kwargs: Any) -> None:
+        raise STTProviderError(
+            "STT_TIMEOUT",
+            "음성 처리 시간이 초과되었습니다.",
+            retryable=True,
+        )
+
+    repository = RunRepository()
+    jobs = JobRepository()
+    ingestion = FileIngestionService(
+        user_repository=repository,  # type: ignore[arg-type]
+        user_job_repository=jobs,  # type: ignore[arg-type]
+        admin_repository=repository,  # type: ignore[arg-type]
+        admin_job_repository=jobs,  # type: ignore[arg-type]
+        storage=DownloadStorage(),  # type: ignore[arg-type]
+        stt_provider=None,  # type: ignore[arg-type]
+        user=AuthenticatedUser(id=USER_ID, email=None, access_token="token"),
+        settings=Settings(_env_file=None),
+    )
+    monkeypatch.setattr(ingestion, "_validate_downloaded_file", fake_validate)
+    monkeypatch.setattr(ingestion, "_transcribe_audio", fail_transcription)
+
+    await ingestion.run(job_id)
+
+    assert jobs.job["status"] == "failed"
+    assert jobs.job["error_code"] == "STT_TIMEOUT"
+    assert jobs.job["finished_at"] is not None
+    assert repository.file["processing_status"] == "failed"
+    assert repository.meeting["processing_status"] == "failed"

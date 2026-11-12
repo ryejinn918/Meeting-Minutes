@@ -3,7 +3,7 @@ import * as tus from "tus-js-client";
 
 import { apiRequest } from "@/lib/api-client";
 import { supabase } from "@/lib/supabase";
-import type { FileCompleteResponse, Meeting, MeetingFile, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
+import type { FileCompleteResponse, Meeting, MeetingFile, MeetingListItem, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
 
 interface MeApiResponse {
   id: string;
@@ -23,6 +23,10 @@ function normalizeMeeting(meeting: Meeting): Meeting {
   return { ...meeting, created_by: normalizeUser(meeting.created_by) };
 }
 
+function normalizeMeetingListItem(meeting: MeetingListItem): MeetingListItem {
+  return { ...meeting, created_by: normalizeUser(meeting.created_by) };
+}
+
 function normalizeMember(member: TeamMember): TeamMember {
   return { ...member, avatar_color: member.avatar_color ?? avatarColor(member.id) };
 }
@@ -38,9 +42,9 @@ export const apiService = {
     const team = await apiRequest<TeamDetail>(`/api/v1/teams/${teamId}`);
     return { ...team, members: team.members.map(normalizeMember) };
   },
-  async getMeetings(teamId: string): Promise<Meeting[]> {
-    const meetings = await apiRequest<Meeting[]>(`/api/v1/meetings?team_id=${encodeURIComponent(teamId)}`);
-    return meetings.map(normalizeMeeting);
+  async getMeetings(teamId: string): Promise<MeetingListItem[]> {
+    const meetings = await apiRequest<MeetingListItem[]>(`/api/v1/meetings?team_id=${encodeURIComponent(teamId)}`);
+    return meetings.map(normalizeMeetingListItem);
   },
   async getMeeting(id: string): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}`));

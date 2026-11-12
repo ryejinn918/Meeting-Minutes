@@ -35,9 +35,14 @@ async def split_audio_file(
     max_audio_seconds: int,
     max_chunk_bytes: int,
     ffmpeg_executable: str | None = None,
+    process_timeout_seconds: float = 120.0,
 ) -> AudioSplitResult:
     executable = ffmpeg_executable or _get_ffmpeg_executable()
-    duration = await _probe_duration(source, executable)
+    duration = await probe_audio_duration(
+        source,
+        ffmpeg_executable=executable,
+        timeout_seconds=process_timeout_seconds,
+    )
     if duration > max_audio_seconds:
         raise AppError(
             413,
@@ -85,7 +90,10 @@ async def split_audio_file(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await process.communicate()
+        _, stderr = await _communicate(
+            process,
+            timeout_seconds=process_timeout_seconds,
+        )
         if process.returncode != 0 or not output.exists() or output.stat().st_size == 0:
             raise AppError(
                 422,
@@ -143,7 +151,13 @@ def _get_ffmpeg_executable() -> str:
         ) from exc
 
 
-async def _probe_duration(source: Path, executable: str) -> float:
+async def probe_audio_duration(
+    source: Path,
+    *,
+    ffmpeg_executable: str | None = None,
+    timeout_seconds: float = 120.0,
+) -> float:
+    executable = ffmpeg_executable or _get_ffmpeg_executable()
     process = await asyncio.create_subprocess_exec(
         executable,
         "-nostdin",
@@ -153,7 +167,7 @@ async def _probe_duration(source: Path, executable: str) -> float:
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await process.communicate()
+    _, stderr = await _communicate(process, timeout_seconds=timeout_seconds)
     match = _DURATION_PATTERN.search(stderr.decode("utf-8", errors="replace"))
     if match is None:
         raise AppError(
@@ -169,3 +183,23 @@ async def _probe_duration(source: Path, executable: str) -> float:
     if duration <= 0:
         raise AppError(422, "AUDIO_EMPTY", "음성파일에 재생할 내용이 없습니다.")
     return duration
+
+
+async def _communicate(
+    process: asyncio.subprocess.Process,
+    *,
+    timeout_seconds: float,
+) -> tuple[bytes, bytes]:
+    try:
+        return await asyncio.wait_for(
+            process.communicate(),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        process.kill()
+        await process.communicate()
+        raise AppError(
+            504,
+            "AUDIO_PROCESSING_TIMEOUT",
+            "음성파일 변환 시간이 초과되었습니다. 다시 시도해 주세요.",
+        ) from exc

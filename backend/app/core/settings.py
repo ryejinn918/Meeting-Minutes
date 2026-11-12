@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     max_document_bytes: int = 10_485_760
     max_pdf_pages: int = 200
     stt_direct_max_bytes: int = 20_000_000
+    stt_direct_max_seconds: int = 300
     stt_chunk_seconds: int = 600
     stt_chunk_overlap_seconds: int = 2
     stt_max_chunks: int = 24
@@ -34,7 +35,12 @@ class Settings(BaseSettings):
     openai_stt_model: str = "gpt-4o-transcribe-diarize"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_timeout_seconds: float = 90.0
+    openai_timeout_per_audio_second: float = 0.6
+    openai_timeout_max_seconds: float = 420.0
+    openai_connect_timeout_seconds: float = 10.0
+    openai_write_timeout_seconds: float = 60.0
     openai_max_retries: int = 1
+    ffmpeg_timeout_seconds: float = 120.0
     stt_mode: str = "mock"
     openrouter_api_key: str = ""
     openrouter_analysis_model: str = ""
@@ -52,6 +58,12 @@ class Settings(BaseSettings):
             raise ValueError("MAX_AUDIO_BYTES must not exceed 100 MiB")
         if not 0 <= self.stt_chunk_overlap_seconds < self.stt_chunk_seconds:
             raise ValueError("STT chunk overlap must be smaller than the chunk duration")
+        if not 0 < self.stt_direct_max_seconds <= self.stt_max_audio_seconds:
+            raise ValueError("STT direct duration must be within the audio duration limit")
+        if self.openai_timeout_max_seconds < self.openai_timeout_seconds:
+            raise ValueError("OpenAI maximum timeout must be at least the base timeout")
+        if self.openai_timeout_per_audio_second <= 0:
+            raise ValueError("OpenAI timeout multiplier must be positive")
         if self.app_env != "production":
             return self
         required = {

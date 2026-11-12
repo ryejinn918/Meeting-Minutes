@@ -1,6 +1,7 @@
 from functools import lru_cache
 
-from fastapi import Depends
+import httpx
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.ai.analysis.base import AnalysisProvider
@@ -22,6 +23,10 @@ from app.storage.client import SupabaseStorageClient
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.http_client
+
+
 @lru_cache
 def get_token_verifier() -> SupabaseTokenVerifier:
     return SupabaseTokenVerifier(get_settings())
@@ -39,11 +44,17 @@ async def get_current_user(
 def get_repository(
     user: AuthenticatedUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> MeetFlowRepository:
-    return MeetFlowRepository(SupabaseRestClient(settings, user.access_token))
+    return MeetFlowRepository(
+        SupabaseRestClient(settings, user.access_token, http_client=http_client)
+    )
 
 
-def get_admin_repository(settings: Settings = Depends(get_settings)) -> MeetFlowRepository:
+def get_admin_repository(
+    settings: Settings = Depends(get_settings),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+) -> MeetFlowRepository:
     if not settings.supabase_secret_key:
         raise AppError(
             503,
@@ -59,6 +70,7 @@ def get_admin_repository(settings: Settings = Depends(get_settings)) -> MeetFlow
         settings,
         legacy_service_role_token,
         api_key=settings.supabase_secret_key,
+        http_client=http_client,
     )
     return MeetFlowRepository(client)
 
@@ -91,10 +103,13 @@ def get_stt_provider(settings: Settings = Depends(get_settings)) -> STTProvider:
     raise AppError(503, "STT_MODE_INVALID", "음성 전사 실행 모드 설정을 확인해 주세요.")
 
 
-def get_storage_client(settings: Settings = Depends(get_settings)) -> SupabaseStorageClient:
+def get_storage_client(
+    settings: Settings = Depends(get_settings),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+) -> SupabaseStorageClient:
     if not settings.supabase_secret_key:
         raise AppError(503, "SUPABASE_ADMIN_NOT_CONFIGURED", "파일 저장소 설정을 확인해 주세요.")
-    return SupabaseStorageClient(settings)
+    return SupabaseStorageClient(settings, http_client=http_client)
 
 
 def get_analysis_service(

@@ -36,6 +36,8 @@ services:
         value: 52428800
       - key: STT_DIRECT_MAX_BYTES
         value: 20000000
+      - key: STT_DIRECT_MAX_SECONDS
+        value: 300
       - key: STT_CHUNK_SECONDS
         value: 600
       - key: STT_CHUNK_OVERLAP_SECONDS
@@ -44,3 +46,17 @@ services:
         value: 24
       - key: STT_MAX_AUDIO_SECONDS
         value: 14400
+      - key: OPENAI_TIMEOUT_SECONDS
+        value: 90
+      - key: OPENAI_TIMEOUT_PER_AUDIO_SECOND
+        value: 0.6
+      - key: OPENAI_TIMEOUT_MAX_SECONDS
+        value: 420
+      - key: OPENAI_CONNECT_TIMEOUT_SECONDS
+        value: 10
+      - key: OPENAI_WRITE_TIMEOUT_SECONDS
+        value: 60
+      - key: OPENAI_MAX_RETRIES
+        value: 1
+      - key: FFMPEG_TIMEOUT_SECONDS
+        value: 120

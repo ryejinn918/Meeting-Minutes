@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 from uuid import UUID
 
@@ -77,7 +78,9 @@ class PartialTranscriptRepository:
     async def get_notes(self, notes_id: UUID | None) -> None:
         return None
 
-    async def list_action_items(self, meeting_id: UUID) -> list[dict[str, Any]]:
+    async def list_action_items(
+        self, meeting_id: UUID, source_run_id: UUID | None = None
+    ) -> list[dict[str, Any]]:
         return []
 
     async def list_shared_member_ids(self, meeting_id: UUID) -> list[UUID]:
@@ -143,3 +146,86 @@ async def test_speaker_rename_updates_only_edited_transcript() -> None:
 
     assert repository.transcript["original_text"] == "[00:00:01] 화자 1: 원본 발언"
     assert repository.transcript["edited_text"] == "[00:00:01] 김민지: 수정한 발언"
+
+
+@pytest.mark.asyncio
+async def test_meeting_list_does_not_hydrate_card_rows() -> None:
+    class ListRepository(PartialTranscriptRepository):
+        async def list_meetings(self, team_id: UUID) -> list[dict[str, Any]]:
+            assert team_id == TEAM_ID
+            return [self.meeting, {**self.meeting, "id": str(UUID(int=9))}]
+
+        async def get_transcript(self, transcript_id: UUID | None) -> dict[str, Any] | None:
+            raise AssertionError("meeting cards must not load transcript details")
+
+        async def list_shared_meeting_ids(
+            self, user_id: UUID, meeting_ids: set[UUID]
+        ) -> set[UUID]:
+            return set()
+
+    repository = ListRepository()
+    service = MeetingService(
+        repository,  # type: ignore[arg-type]
+        AuthenticatedUser(id=USER_ID, email="owner@example.invalid", access_token="test"),
+    )
+
+    result = await service.list(TEAM_ID)
+
+    assert len(result) == 2
+    assert result[0].title == "Integration Meeting"
+    assert not hasattr(result[0], "transcript_edited")
+
+
+@pytest.mark.asyncio
+async def test_meeting_detail_loads_independent_resources_concurrently() -> None:
+    started: set[str] = set()
+    release = asyncio.Event()
+
+    class ConcurrentRepository(PartialTranscriptRepository):
+        async def _wait(self, name: str) -> None:
+            started.add(name)
+            await release.wait()
+
+        async def get_profiles(self, user_ids: set[UUID]) -> dict[str, dict[str, Any]]:
+            await self._wait("profiles")
+            return await super().get_profiles(user_ids)
+
+        async def get_transcript(self, transcript_id: UUID | None) -> dict[str, Any] | None:
+            await self._wait("transcript")
+            return None
+
+        async def list_transcript_speakers(
+            self, transcript_id: UUID | None
+        ) -> list[dict[str, Any]]:
+            await self._wait("speakers")
+            return []
+
+        async def list_transcript_segments(
+            self, transcript_id: UUID | None
+        ) -> list[dict[str, Any]]:
+            await self._wait("segments")
+            return []
+
+        async def get_notes(self, notes_id: UUID | None) -> None:
+            await self._wait("notes")
+            return None
+
+        async def list_shared_member_ids(self, meeting_id: UUID) -> list[UUID]:
+            await self._wait("shares")
+            return []
+
+    repository = ConcurrentRepository()
+    service = MeetingService(
+        repository,  # type: ignore[arg-type]
+        AuthenticatedUser(id=USER_ID, email="owner@example.invalid", access_token="test"),
+    )
+    task = asyncio.create_task(service.get(MEETING_ID))
+    for _ in range(20):
+        if len(started) == 6:
+            break
+        await asyncio.sleep(0)
+
+    assert started == {"profiles", "transcript", "speakers", "segments", "notes", "shares"}
+    release.set()
+    result = await task
+    assert result.id == MEETING_ID

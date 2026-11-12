@@ -8,9 +8,15 @@ from app.core.settings import Settings
 
 class SupabaseRestClient:
     def __init__(
-        self, settings: Settings, access_token: str | None, *, api_key: str | None = None
+        self,
+        settings: Settings,
+        access_token: str | None,
+        *,
+        api_key: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self.base_url = settings.supabase_rest_url
+        self.http_client = http_client
         self.headers = {
             "apikey": api_key or settings.supabase_publishable_key,
             "Content-Type": "application/json",
@@ -31,14 +37,19 @@ class SupabaseRestClient:
         if prefer:
             headers["Prefer"] = prefer
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.request(
-                    method,
-                    f"{self.base_url}/{path.lstrip('/')}",
-                    params=params,
-                    json=json,
-                    headers=headers,
-                )
+            request = {
+                "method": method,
+                "url": f"{self.base_url}/{path.lstrip('/')}",
+                "params": params,
+                "json": json,
+                "headers": headers,
+                "timeout": 10,
+            }
+            if self.http_client is not None:
+                response = await self.http_client.request(**request)
+            else:
+                async with httpx.AsyncClient() as client:
+                    response = await client.request(**request)
         except httpx.HTTPError as exc:
             raise AppError(
                 503, "DATABASE_UNAVAILABLE", "데이터 저장소에 연결할 수 없습니다."

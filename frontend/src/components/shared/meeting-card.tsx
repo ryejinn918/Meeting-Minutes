@@ -5,11 +5,21 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatMeetingDate } from "@/lib/format";
-import type { Meeting } from "@/types/api";
+import { apiService } from "@/lib/api-service";
+import { queryKeys } from "@/lib/query-keys";
+import type { MeetingListItem } from "@/types/api";
 
-export function MeetingCard({ meeting }: { meeting: Meeting }) {
+export function MeetingCard({ meeting }: { meeting: MeetingListItem }) {
+  const queryClient = useQueryClient();
+  const prefetchDetail = () => {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.meeting(meeting.id),
+      queryFn: () => apiService.getMeeting(meeting.id),
+      staleTime: 2 * 60_000,
+    });
+  };
   return (
-    <Link className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2" to={`/meetings/${meeting.id}`}>
+    <Link className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2" onFocus={prefetchDetail} onPointerEnter={prefetchDetail} onTouchStart={prefetchDetail} to={`/meetings/${meeting.id}`}>
       <Card className="transition group-hover:-translate-y-0.5 group-hover:border-indigo-200 group-hover:shadow-lg">
         <CardContent>
           <div className="flex min-w-0 items-start gap-3">
@@ -31,4 +41,4 @@ export function MeetingCard({ meeting }: { meeting: Meeting }) {
     </Link>
   );
 }
-
+import { useQueryClient } from "@tanstack/react-query";

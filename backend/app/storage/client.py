@@ -10,8 +10,11 @@ from app.core.settings import Settings
 
 
 class SupabaseStorageClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, http_client: httpx.AsyncClient | None = None
+    ) -> None:
         self.base_url = settings.supabase_storage_url.rstrip("/")
+        self.http_client = http_client
         self.headers = {"apikey": settings.supabase_secret_key}
         if settings.supabase_secret_key.startswith("eyJ"):
             self.headers["Authorization"] = f"Bearer {settings.supabase_secret_key}"
@@ -56,8 +59,11 @@ class SupabaseStorageClient:
         )
         downloaded = 0
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                async with client.stream("GET", url, headers=self.headers) as response:
+            client = self.http_client or httpx.AsyncClient()
+            try:
+                async with client.stream(
+                    "GET", url, headers=self.headers, timeout=60
+                ) as response:
                     if response.status_code >= 400:
                         details: dict[str, Any] = {
                             "operation": "GET",
@@ -80,6 +86,9 @@ class SupabaseStorageClient:
                                     "업로드된 파일이 허용된 크기를 초과했습니다.",
                                 )
                             await asyncio.to_thread(handle.write, chunk)
+            finally:
+                if self.http_client is None:
+                    await client.aclose()
         except AppError:
             raise
         except httpx.HTTPError as exc:
@@ -105,13 +114,18 @@ class SupabaseStorageClient:
         raw: bool = False,
     ) -> Any:
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.request(
-                    method,
-                    f"{self.base_url}/{path}",
-                    headers=self.headers,
-                    json=json,
-                )
+            request = {
+                "method": method,
+                "url": f"{self.base_url}/{path}",
+                "headers": self.headers,
+                "json": json,
+                "timeout": 30,
+            }
+            if self.http_client is not None:
+                response = await self.http_client.request(**request)
+            else:
+                async with httpx.AsyncClient() as client:
+                    response = await client.request(**request)
         except httpx.HTTPError as exc:
             raise AppError(503, "STORAGE_UNAVAILABLE", "파일 저장소에 연결할 수 없습니다.") from exc
         if response.status_code >= 400:
