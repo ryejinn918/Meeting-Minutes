@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -9,6 +9,7 @@ class TranscriptResult:
     model: str
     language: str | None = None
     request_id: str | None = None
+    usage: dict[str, Any] = field(default_factory=dict)
 
 
 class STTProviderError(Exception):

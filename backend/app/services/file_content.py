@@ -43,7 +43,12 @@ def validate_upload_metadata(
         raise AppError(415, "FILE_TYPE_NOT_ALLOWED", "지원하지 않는 파일 형식입니다.")
     if extension in AUDIO_EXTENSIONS:
         if size_bytes > max_audio_bytes:
-            raise AppError(413, "FILE_TOO_LARGE", "음성파일은 25MB 이하만 업로드할 수 있습니다.")
+            limit_mb = max_audio_bytes // (1024 * 1024)
+            raise AppError(
+                413,
+                "FILE_TOO_LARGE",
+                f"음성파일은 {limit_mb}MB 이하만 업로드할 수 있습니다.",
+            )
         return extension, "audio", "transcribe"
     if size_bytes > max_document_bytes:
         raise AppError(413, "FILE_TOO_LARGE", "문서 파일은 10MB 이하만 업로드할 수 있습니다.")
@@ -90,6 +95,65 @@ def validate_file_bytes(
         job_type=job_type,
         canonical_mime=claimed_mime.lower(),
         sha256=digest,
+    )
+
+
+def validate_file_path(
+    path: Path,
+    *,
+    filename: str,
+    claimed_mime: str,
+    expected_size: int,
+    expected_sha256: str,
+    max_audio_bytes: int,
+    max_document_bytes: int,
+) -> ValidatedFile:
+    actual_size = path.stat().st_size
+    if actual_size == 0:
+        raise AppError(422, "FILE_EMPTY", "빈 파일은 처리할 수 없습니다.")
+    extension, source_type, job_type = validate_upload_metadata(
+        filename,
+        claimed_mime,
+        actual_size,
+        max_audio_bytes=max_audio_bytes,
+        max_document_bytes=max_document_bytes,
+    )
+    if actual_size != expected_size:
+        raise AppError(422, "FILE_SIZE_MISMATCH", "업로드된 파일 크기가 일치하지 않습니다.")
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        signature = handle.read(8192)
+        digest.update(signature)
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_sha256:
+        raise AppError(422, "FILE_HASH_MISMATCH", "업로드된 파일을 확인하지 못했습니다.")
+    valid_signature = {
+        ".pdf": signature.startswith(b"%PDF-"),
+        ".txt": b"\x00" not in signature,
+        ".wav": len(signature) >= 12
+        and signature[:4] == b"RIFF"
+        and signature[8:12] == b"WAVE",
+        ".m4a": len(signature) >= 12 and signature[4:8] == b"ftyp",
+        ".mp3": signature.startswith(b"ID3")
+        or (
+            len(signature) >= 2
+            and signature[0] == 0xFF
+            and signature[1] & 0xE0 == 0xE0
+        ),
+    }[extension]
+    if not valid_signature:
+        raise AppError(
+            415,
+            "FILE_CONTENT_INVALID",
+            "파일 형식과 실제 내용이 일치하지 않습니다.",
+        )
+    return ValidatedFile(
+        extension=extension,
+        source_type=source_type,
+        job_type=job_type,
+        canonical_mime=claimed_mime.lower(),
+        sha256=digest.hexdigest(),
     )
 
 

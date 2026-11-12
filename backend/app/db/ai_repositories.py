@@ -7,7 +7,7 @@ from app.db.client import SupabaseRestClient
 
 JOB_SELECT = (
     "id,meeting_id,file_id,job_type,status,attempt_count,error_code,error_message_safe,"
-    "started_at,finished_at,created_at,updated_at"
+    "usage,started_at,finished_at,created_at,updated_at"
 )
 
 
@@ -74,6 +74,52 @@ class AIRepository:
         if job is None:
             raise AppError(404, "JOB_NOT_FOUND", "분석 작업을 찾을 수 없습니다.")
         return job
+
+    async def list_job_chunks(self, job_id: UUID) -> list[dict[str, Any]]:
+        rows, _ = await self.client.request(
+            "GET",
+            "processing_job_chunks",
+            params={
+                "select": (
+                    "chunk_index,chunk_sha256,start_seconds,end_seconds,"
+                    "transcript_text,provider,model,usage"
+                ),
+                "job_id": f"eq.{job_id}",
+                "order": "chunk_index.asc",
+            },
+        )
+        return rows
+
+    async def save_job_chunk(
+        self,
+        *,
+        job_id: UUID,
+        chunk_index: int,
+        chunk_sha256: str,
+        start_seconds: float,
+        end_seconds: float,
+        transcript_text: str,
+        provider: str,
+        model: str,
+        usage: dict[str, Any],
+    ) -> None:
+        await self.client.request(
+            "POST",
+            "processing_job_chunks",
+            params={"on_conflict": "job_id,chunk_index"},
+            json={
+                "job_id": str(job_id),
+                "chunk_index": chunk_index,
+                "chunk_sha256": chunk_sha256,
+                "start_seconds": start_seconds,
+                "end_seconds": end_seconds,
+                "transcript_text": transcript_text,
+                "provider": provider,
+                "model": model,
+                "usage": usage,
+            },
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
 
     async def create_ai_run(
         self,

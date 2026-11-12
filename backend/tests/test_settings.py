@@ -26,6 +26,16 @@ def test_valid_production_settings_are_accepted() -> None:
     assert production_settings().app_env == "production"
 
 
+def test_audio_upload_has_100_mib_hard_cap() -> None:
+    with pytest.raises(ValidationError, match="100 MiB"):
+        Settings(_env_file=None, max_audio_bytes=104_857_601)
+
+
+def test_chunk_overlap_must_be_smaller_than_duration() -> None:
+    with pytest.raises(ValidationError, match="overlap"):
+        Settings(_env_file=None, stt_chunk_seconds=10, stt_chunk_overlap_seconds=10)
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [

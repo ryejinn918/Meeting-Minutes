@@ -32,3 +32,15 @@ services:
         value: gpt-transcribe
       - key: STT_MODE
         value: real
+      - key: MAX_AUDIO_BYTES
+        value: 52428800
+      - key: STT_DIRECT_MAX_BYTES
+        value: 20000000
+      - key: STT_CHUNK_SECONDS
+        value: 600
+      - key: STT_CHUNK_OVERLAP_SECONDS
+        value: 2
+      - key: STT_MAX_CHUNKS
+        value: 24
+      - key: STT_MAX_AUDIO_SECONDS
+        value: 14400

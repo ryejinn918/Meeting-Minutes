@@ -1,3 +1,5 @@
+import asyncio
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urljoin, urlparse
 
@@ -39,6 +41,54 @@ class SupabaseStorageClient:
         if not isinstance(data, bytes):
             raise AppError(502, "STORAGE_RESPONSE_ERROR", "원본 파일을 읽지 못했습니다.")
         return data
+
+    async def download_to_path(
+        self,
+        bucket: str,
+        path: str,
+        destination: Path,
+        *,
+        max_bytes: int,
+    ) -> int:
+        url = (
+            f"{self.base_url}/object/{quote(bucket, safe='')}/"
+            f"{quote(path, safe='/')}"
+        )
+        downloaded = 0
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                async with client.stream("GET", url, headers=self.headers) as response:
+                    if response.status_code >= 400:
+                        details: dict[str, Any] = {
+                            "operation": "GET",
+                            "resource": "storage.object",
+                            "upstream_status": response.status_code,
+                        }
+                        raise AppError(
+                            502,
+                            "STORAGE_ERROR",
+                            "파일 저장소 작업을 완료하지 못했습니다.",
+                            details=details,
+                        )
+                    with destination.open("wb") as handle:
+                        async for chunk in response.aiter_bytes(1024 * 1024):
+                            downloaded += len(chunk)
+                            if downloaded > max_bytes:
+                                raise AppError(
+                                    413,
+                                    "FILE_TOO_LARGE",
+                                    "업로드된 파일이 허용된 크기를 초과했습니다.",
+                                )
+                            await asyncio.to_thread(handle.write, chunk)
+        except AppError:
+            raise
+        except httpx.HTTPError as exc:
+            raise AppError(
+                503,
+                "STORAGE_UNAVAILABLE",
+                "파일 저장소에 연결할 수 없습니다.",
+            ) from exc
+        return downloaded
 
     async def delete(self, bucket: str, path: str) -> None:
         await self._request(

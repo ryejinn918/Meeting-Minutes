@@ -22,9 +22,14 @@ class Settings(BaseSettings):
     supabase_jwt_mode: str = "auto"
     supabase_jwks_cache_seconds: int = 600
     supabase_storage_bucket: str = "meeting-files"
-    max_audio_bytes: int = 26_214_400
+    max_audio_bytes: int = 52_428_800
     max_document_bytes: int = 10_485_760
     max_pdf_pages: int = 200
+    stt_direct_max_bytes: int = 20_000_000
+    stt_chunk_seconds: int = 600
+    stt_chunk_overlap_seconds: int = 2
+    stt_max_chunks: int = 24
+    stt_max_audio_seconds: int = 14_400
     openai_api_key: str = ""
     openai_stt_model: str = "gpt-transcribe"
     openai_base_url: str = "https://api.openai.com/v1"
@@ -43,6 +48,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_runtime_configuration(self) -> "Settings":
+        if self.max_audio_bytes > 104_857_600:
+            raise ValueError("MAX_AUDIO_BYTES must not exceed 100 MiB")
+        if not 0 <= self.stt_chunk_overlap_seconds < self.stt_chunk_seconds:
+            raise ValueError("STT chunk overlap must be smaller than the chunk duration")
         if self.app_env != "production":
             return self
         required = {

@@ -90,5 +90,6 @@ class OpenAISTTProvider:
                 model=self.model,
                 language="ko",
                 request_id=response.headers.get("x-request-id"),
+                usage=payload.get("usage") if isinstance(payload.get("usage"), dict) else {},
             )
         raise STTProviderError("STT_INTERNAL_ERROR", "음성을 처리하지 못했습니다.", retryable=True)

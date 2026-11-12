@@ -11,7 +11,7 @@ FileStatus = Literal["pending_upload", "uploaded", "processing", "succeeded", "f
 class UploadUrlRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=100)
-    size_bytes: int = Field(gt=0, le=26_214_400)
+    size_bytes: int = Field(gt=0, le=104_857_600)
     sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
 
     @field_validator("filename")

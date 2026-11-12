@@ -112,6 +112,18 @@ def test_metadata_rejects_oversized_and_mismatched_mime() -> None:
     assert mismatched.value.code == "FILE_TYPE_NOT_ALLOWED"
 
 
+def test_metadata_accepts_audio_over_openai_single_request_limit() -> None:
+    extension, source_type, job_type = validate_upload_metadata(
+        "long-meeting.m4a",
+        "audio/mp4",
+        30 * 1024 * 1024,
+        max_audio_bytes=50 * 1024 * 1024,
+        max_document_bytes=10 * 1024 * 1024,
+    )
+
+    assert (extension, source_type, job_type) == (".m4a", "audio", "transcribe")
+
+
 def test_txt_utf8_bom_and_whitespace_are_normalized() -> None:
     text = extract_document_text(
         "\ufeff회의  내용\r\n\r\n\r\n결정".encode(),

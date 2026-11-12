@@ -1,6 +1,6 @@
 # MeetFlow 시스템 아키텍처
 
-> 상태: 3-B단계 Private Storage 파일 수집 및 STT/문서 추출 구현 기준선
+> 상태: 3-B단계 Private Storage 및 대용량 분할 STT 구현 기준선
 > 최종 갱신: 2026-11-12
 > 목표: 1인 + AI 코딩 도구로 2일 안에 검증 가능한 모바일 PWA MVP 완성
 
@@ -153,6 +153,7 @@ Render Free 배포에서도 프로세스 내부 `BackgroundTasks`는 서버 재�
 | `action_items` | `id`, `meeting_id`, `source_run_id`, `description`, `assignee_id`, `assignee_text`, `due_date`, `status`, `evidence`, `sort_order`, `updated_by` | status=`todo/in_progress/done`; 불명확한 담당자/기한은 null. 팀원과 매칭 실패 시 `assignee_text`만 보존 |
 | `meeting_shares` | `meeting_id`, `user_id`, `shared_by`, `can_edit` | PK `(meeting_id,user_id)`. MVP는 `can_edit=false` 고정 권장; 생성자와 팀 owner/admin은 별도 권한 |
 | `processing_jobs` | `id`, `meeting_id`, `job_type`, `status`, `attempt_count`, `error_code`, `error_message_safe`, `started_at`, `finished_at` | job type=`extract/transcribe/analyze`; status=`queued/processing/succeeded/failed` |
+| `processing_job_chunks` | `job_id`, `chunk_index`, `chunk_sha256`, `start_seconds`, `end_seconds`, `transcript_text`, `usage jsonb` | 대용량 STT 구간 checkpoint. authenticated 직접 접근 권한 없이 서버 worker만 사용 |
 
 `meeting_notes`의 JSON 배열에는 단순한 구조화 목록만 두고, 상태·담당자·기한을 갱신하는 액션아이템은 행 단위 권한/갱신이 필요한 별도 테이블로 둔다. `meeting_ai_runs.validated_output`은 감사 및 재생성 비교용 원본이고, `meeting_notes`와 `action_items`가 편집 가능한 현재 상태다.
 
@@ -202,7 +203,9 @@ FastAPI가 secret/service-role key를 사용할 때 RLS가 우회된다는 점�
 6. **저장**: 검증된 AI 출력은 `meeting_ai_runs`에 불변 저장하고, 별도 transaction으로 `meeting_notes`/`action_items` 편집본을 만든다.
 7. **상태/오류**: 각 단계 전후에 meeting/job 상태를 기록한다. UI에는 안전한 오류 코드와 재시도 행동만 노출하고 provider 원문 오류/키/본문은 로그에 남기지 않는다.
 
-OpenAI 공식 파일 전사 문서상 단일 요청 파일 제한은 25MB다. 2일 MVP는 음성 업로드를 25MB 이하로 제한한다. 더 큰 파일 분할/문맥 연결/ffmpeg 처리는 후속 범위다. 참고: [OpenAI File transcription](https://developers.openai.com/api/docs/guides/speech-to-text), [OpenRouter DeepSeek models](https://openrouter.ai/deepseek).
+OpenAI 공식 파일 전사 문서상 단일 요청 파일 제한은 25MB다. 원본은 Private Storage에 보존하고 서버는 전체 파일을 메모리에 올리지 않은 채 임시 파일로 스트리밍한다. 20MB를 넘는 음성은 FFmpeg로 mono 16kHz/48kbps MP3, 기본 10분 구간과 2초 중첩으로 변환한다. 각 조각은 20MB 이하인지 다시 검사해 순서대로 전사하고, 정확히 일치하는 경계 단어만 보수적으로 제거한다. 구간 결과는 `processing_job_chunks`에 저장해 서버 재시작 후 같은 job 재시도에서 완료 구간을 재호출하지 않는다. 기본 최대 길이는 4시간(24구간)이다. 참고: [OpenAI File transcription](https://developers.openai.com/api/docs/guides/speech-to-text).
+
+Supabase Free의 공식 Storage 파일 상한은 50MB이므로 기본 배포값은 50MiB다. 애플리케이션과 DB의 절대 하드캡은 100MiB이며, 100MiB를 사용하려면 Supabase 유료 플랜의 global/bucket limit과 프론트·백엔드 환경변수를 함께 올려야 한다. 6MB 초과 브라우저 업로드는 resumable TUS를 사용한다. 참고: [Supabase Storage file limits](https://supabase.com/docs/guides/storage/uploads/file-limits), [Resumable uploads](https://supabase.com/docs/guides/storage/uploads/resumable-uploads).
 
 파일은 서버가 `team_id/meeting_id/file_id/source.ext` 경로와 `meeting_files` 행을 만든 뒤 Supabase signed upload token으로 private bucket에 올린다. complete 요청에서 서버가 원본을 다시 읽어 크기, SHA-256, MIME/확장자와 magic bytes를 검증한 경우에만 `extract` 또는 `transcribe` job을 생성한다. 잘못된 object는 삭제하고, 업로드 후 complete가 호출되지 않은 stale object는 후속 정리 작업 대상으로 기록한다.
 
@@ -396,7 +399,12 @@ STT_MODE=mock
 OPENROUTER_API_KEY=
 OPENROUTER_ANALYSIS_MODEL=deepseek/deepseek-v3.2
 AI_MODE=real
-MAX_AUDIO_BYTES=26214400
+MAX_AUDIO_BYTES=52428800
+STT_DIRECT_MAX_BYTES=20000000
+STT_CHUNK_SECONDS=600
+STT_CHUNK_OVERLAP_SECONDS=2
+STT_MAX_CHUNKS=24
+STT_MAX_AUDIO_SECONDS=14400
 SIGNED_URL_TTL_SECONDS=300
 ```
 

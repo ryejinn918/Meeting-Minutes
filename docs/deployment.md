@@ -11,6 +11,7 @@
 - `202611110001_initial_schema.sql`
 - `202611110002_ai_worker_grants.sql`
 - `202611120001_file_ingestion.sql`
+- `202611120002_large_audio_chunking.sql` (대용량 음성 기능 배포 전에 별도 적용)
 
 `meeting-files` Storage bucket은 반드시 private이어야 한다. 공개 버킷으로 전환하지 않는다.
 
@@ -81,7 +82,12 @@ OPENAI_MAX_RETRIES=1
 OPENROUTER_TIMEOUT_SECONDS=45
 OPENROUTER_MAX_RETRIES=1
 AI_STALE_JOB_SECONDS=300
-MAX_AUDIO_BYTES=26214400
+MAX_AUDIO_BYTES=52428800
+STT_DIRECT_MAX_BYTES=20000000
+STT_CHUNK_SECONDS=600
+STT_CHUNK_OVERLAP_SECONDS=2
+STT_MAX_CHUNKS=24
+STT_MAX_AUDIO_SECONDS=14400
 MAX_DOCUMENT_BYTES=10485760
 MAX_PDF_PAGES=200
 ```
@@ -123,6 +129,7 @@ Vercel Dashboard에서 **Add New → Project**를 선택하고 같은 GitHub 저
 VITE_API_BASE_URL=https://<render-service>.onrender.com
 VITE_SUPABASE_URL=https://rihvbxobcbwjiqpaciek.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+VITE_MAX_AUDIO_BYTES=52428800
 ```
 
 production과 실제로 사용할 preview 환경에 각각 등록한다. 세 값 중 하나라도 없으면 production build가 실패하도록 설정되어 있다.
@@ -226,7 +233,8 @@ Render 공식 문서 기준으로 Free Web Service는 inbound traffic이 15분 �
 
 - 브라우저 MIME 대신 확장자를 기준으로 허용 MIME을 정규화해 iOS/Android 차이를 줄인다.
 - 원본 파일명은 메타데이터에만 보존하고 Storage 경로는 UUID를 사용한다.
-- 음성은 25MB, 문서는 10MB로 제한한다.
+- Supabase Free에서는 음성 원본을 50MiB로 제한한다. 애플리케이션 하드캡 100MiB는 유료 Storage 한도를 올린 경우에만 사용한다.
+- 6MiB 초과 업로드는 resumable TUS를 사용하고, 20MB 초과 음성은 서버에서 FFmpeg로 분할 전사한다.
 - signed upload 실패 시 같은 파일을 다시 선택할 수 있도록 중복 해시를 해제한다.
 - 가짜 업로드 퍼센트는 표시하지 않는다.
 

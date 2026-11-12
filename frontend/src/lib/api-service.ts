@@ -1,3 +1,6 @@
+import { sha256 } from "@noble/hashes/sha256";
+import * as tus from "tus-js-client";
+
 import { apiRequest } from "@/lib/api-client";
 import { supabase } from "@/lib/supabase";
 import type { FileCompleteResponse, Meeting, MeetingFile, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
@@ -77,6 +80,10 @@ export const apiService = {
     }),
   async uploadFile(input: UploadUrlResponse, file: File): Promise<void> {
     if (!supabase) throw new Error("파일 업로드 설정을 확인해 주세요.");
+    if (file.size > 6 * 1024 * 1024) {
+      await uploadResumable(input, file);
+      return;
+    }
     const { error } = await supabase.storage
       .from(input.bucket)
       .uploadToSignedUrl(input.path, input.token, file, {
@@ -93,7 +100,48 @@ export const apiService = {
     apiRequest<MeetingFile[]>(`/api/v1/meetings/${meetingId}/files`),
 };
 
+async function uploadResumable(input: UploadUrlResponse, file: File): Promise<void> {
+  if (!supabase) throw new Error("파일 업로드 설정을 확인해 주세요.");
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token;
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const projectUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+  if (!accessToken || !publishableKey || !projectUrl) {
+    throw new Error("로그인 세션 또는 파일 업로드 설정을 확인해 주세요.");
+  }
+  const endpoint = new URL("/storage/v1/upload/resumable", projectUrl).toString();
+  await new Promise<void>((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint,
+      chunkSize: 6 * 1024 * 1024,
+      retryDelays: [0, 3000, 5000, 10_000, 20_000],
+      removeFingerprintOnSuccess: true,
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        apikey: publishableKey,
+        "x-upsert": "false",
+      },
+      metadata: {
+        bucketName: input.bucket,
+        objectName: input.path,
+        contentType: input.file.mime_type,
+      },
+      onError: () => reject(new Error("파일을 업로드하지 못했어요. 다시 시도해 주세요.")),
+      onSuccess: () => resolve(),
+    });
+    void upload.findPreviousUploads().then((previous) => {
+      if (previous[0]) upload.resumeFromPreviousUpload(previous[0]);
+      upload.start();
+    }).catch(() => upload.start());
+  });
+}
+
 export async function sha256File(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const digest = sha256.create();
+  const chunkSize = 4 * 1024 * 1024;
+  for (let offset = 0; offset < file.size; offset += chunkSize) {
+    const chunk = await file.slice(offset, offset + chunkSize).arrayBuffer();
+    digest.update(new Uint8Array(chunk));
+  }
+  return Array.from(digest.digest(), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

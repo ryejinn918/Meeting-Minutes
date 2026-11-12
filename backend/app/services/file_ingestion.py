@@ -1,8 +1,12 @@
+import asyncio
+import hashlib
 from datetime import UTC, datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.ai.stt.base import STTProvider, STTProviderError
+from app.ai.stt.base import STTProvider, STTProviderError, TranscriptResult
 from app.core.errors import AppError
 from app.core.security import AuthenticatedUser
 from app.core.settings import Settings
@@ -15,10 +19,14 @@ from app.schemas.files import (
     UploadUrlResponse,
 )
 from app.schemas.jobs import JobResponse
+from app.services.audio_processing import (
+    merge_transcript_chunks,
+    split_audio_file,
+)
 from app.services.authorization import AuthorizationService
 from app.services.file_content import (
     extract_document_text,
-    validate_file_bytes,
+    validate_file_path,
     validate_upload_metadata,
 )
 from app.storage.client import SupabaseStorageClient
@@ -37,6 +45,14 @@ NON_RETRYABLE_FILE_CODES = {
     "STT_REQUEST_REJECTED",
     "STT_EMPTY",
     "OPENAI_NOT_CONFIGURED",
+}
+
+INVALID_UPLOAD_OBJECT_CODES = {
+    "FILE_EMPTY",
+    "FILE_CONTENT_INVALID",
+    "FILE_SIZE_MISMATCH",
+    "FILE_HASH_MISMATCH",
+    "FILE_TOO_LARGE",
 }
 
 
@@ -146,21 +162,23 @@ class FileIngestionService:
         if file["processing_status"] != "pending_upload":
             raise AppError(409, "FILE_ALREADY_COMPLETED", "이미 확인된 파일입니다.")
         try:
-            content = await self.storage.download(file["storage_bucket"], file["storage_path"])
-            validated = validate_file_bytes(
-                content,
-                filename=file["original_name"],
-                claimed_mime=file["mime_type"],
-                expected_size=int(file["size_bytes"]),
-                expected_sha256=file["sha256"],
-                max_audio_bytes=self.settings.max_audio_bytes,
-                max_document_bytes=self.settings.max_document_bytes,
-            )
+            with TemporaryDirectory(prefix="meetflow-upload-") as directory:
+                source = Path(directory) / "source"
+                await self.storage.download_to_path(
+                    file["storage_bucket"],
+                    file["storage_path"],
+                    source,
+                    max_bytes=int(file["size_bytes"]),
+                )
+                validated = await self._validate_downloaded_file(source, file)
         except AppError as exc:
-            try:
-                await self.storage.delete(file["storage_bucket"], file["storage_path"])
-            except AppError:
-                pass
+            if exc.code in INVALID_UPLOAD_OBJECT_CODES:
+                try:
+                    await self.storage.delete(
+                        file["storage_bucket"], file["storage_path"]
+                    )
+                except AppError:
+                    pass
             await self.user_repository.update_meeting_file(
                 file_id,
                 {
@@ -259,33 +277,38 @@ class FileIngestionService:
             await self._set_meeting_status(
                 meeting, "transcribing" if job["job_type"] == "transcribe" else "uploaded"
             )
-            content = await self.storage.download(file["storage_bucket"], file["storage_path"])
-            validated = validate_file_bytes(
-                content,
-                filename=file["original_name"],
-                claimed_mime=file["mime_type"],
-                expected_size=int(file["size_bytes"]),
-                expected_sha256=file["sha256"],
-                max_audio_bytes=self.settings.max_audio_bytes,
-                max_document_bytes=self.settings.max_document_bytes,
-            )
-            if job["job_type"] == "transcribe":
-                result = await self.stt_provider.transcribe(
-                    content,
-                    filename=file["original_name"],
-                    content_type=file["mime_type"],
+            with TemporaryDirectory(prefix=f"meetflow-job-{job_id}-") as directory:
+                temp_dir = Path(directory)
+                source = temp_dir / f"source{Path(file['original_name']).suffix.lower()}"
+                await self.storage.download_to_path(
+                    file["storage_bucket"],
+                    file["storage_path"],
+                    source,
+                    max_bytes=int(file["size_bytes"]),
                 )
-                text = result.text
-                language = result.language
-                provider = result.provider
-                model = result.model
-            else:
-                text = extract_document_text(
-                    content, validated.extension, max_pdf_pages=self.settings.max_pdf_pages
-                )
-                language = None
-                provider = None
-                model = None
+                validated = await self._validate_downloaded_file(source, file)
+                usage: dict[str, Any] = {
+                    "source_size_bytes": int(file["size_bytes"]),
+                }
+                if job["job_type"] == "transcribe":
+                    result, stt_usage = await self._transcribe_audio(
+                        job_id, source, file, temp_dir
+                    )
+                    text = result.text
+                    language = result.language
+                    provider = result.provider
+                    model = result.model
+                    usage.update(stt_usage)
+                else:
+                    content = await asyncio.to_thread(source.read_bytes)
+                    text = extract_document_text(
+                        content,
+                        validated.extension,
+                        max_pdf_pages=self.settings.max_pdf_pages,
+                    )
+                    language = None
+                    provider = None
+                    model = None
             transcript = await self.admin_repository.create_generated_transcript(
                 meeting_id=meeting_id,
                 user_id=UUID(file["uploaded_by"]),
@@ -312,6 +335,7 @@ class FileIngestionService:
                 job_id,
                 {
                     "status": "succeeded",
+                    "usage": usage,
                     "error_code": None,
                     "error_message_safe": None,
                     "finished_at": datetime.now(UTC).isoformat(),
@@ -387,6 +411,126 @@ class FileIngestionService:
             elapsed = (datetime.now(UTC) - started).total_seconds()
             return elapsed > self.settings.ai_stale_job_seconds
         return False
+
+    async def _validate_downloaded_file(
+        self, source: Path, file: dict[str, Any]
+    ) -> Any:
+        return await asyncio.to_thread(
+            validate_file_path,
+            source,
+            filename=file["original_name"],
+            claimed_mime=file["mime_type"],
+            expected_size=int(file["size_bytes"]),
+            expected_sha256=file["sha256"],
+            max_audio_bytes=self.settings.max_audio_bytes,
+            max_document_bytes=self.settings.max_document_bytes,
+        )
+
+    async def _transcribe_audio(
+        self,
+        job_id: UUID,
+        source: Path,
+        file: dict[str, Any],
+        temp_dir: Path,
+    ) -> tuple[TranscriptResult, dict[str, Any]]:
+        source_size = source.stat().st_size
+        if source_size <= self.settings.stt_direct_max_bytes:
+            content = await asyncio.to_thread(source.read_bytes)
+            result = await self.stt_provider.transcribe(
+                content,
+                filename=file["original_name"],
+                content_type=file["mime_type"],
+            )
+            usage = {
+                "chunk_count": 1,
+                "processed_audio_bytes": len(content),
+                "provider_usage": [result.usage],
+            }
+            return result, usage
+
+        split = await split_audio_file(
+            source,
+            temp_dir,
+            chunk_seconds=self.settings.stt_chunk_seconds,
+            overlap_seconds=self.settings.stt_chunk_overlap_seconds,
+            max_chunks=self.settings.stt_max_chunks,
+            max_audio_seconds=self.settings.stt_max_audio_seconds,
+            max_chunk_bytes=self.settings.stt_direct_max_bytes,
+        )
+        cached_rows = await self.admin_job_repository.list_job_chunks(job_id)
+        cached = {int(row["chunk_index"]): row for row in cached_rows}
+        texts: list[str] = []
+        provider_usage: list[dict[str, Any]] = []
+        processed_bytes = 0
+        provider = "openai"
+        model = self.settings.openai_stt_model
+        for chunk in split.chunks:
+            chunk_hash = await asyncio.to_thread(self._sha256_file, chunk.path)
+            previous = cached.get(chunk.index)
+            if previous and previous.get("chunk_sha256") == chunk_hash:
+                texts.append(str(previous["transcript_text"]))
+                provider_usage.append(
+                    previous["usage"] if isinstance(previous.get("usage"), dict) else {}
+                )
+                provider = str(previous["provider"])
+                model = str(previous["model"])
+                processed_bytes += chunk.path.stat().st_size
+                continue
+            content = await asyncio.to_thread(chunk.path.read_bytes)
+            result = await self.stt_provider.transcribe(
+                content,
+                filename=chunk.path.name,
+                content_type="audio/mpeg",
+            )
+            chunk_usage = dict(result.usage)
+            if result.request_id:
+                chunk_usage["request_id"] = result.request_id
+            await self.admin_job_repository.save_job_chunk(
+                job_id=job_id,
+                chunk_index=chunk.index,
+                chunk_sha256=chunk_hash,
+                start_seconds=chunk.start_seconds,
+                end_seconds=chunk.end_seconds,
+                transcript_text=result.text,
+                provider=result.provider,
+                model=result.model,
+                usage=chunk_usage,
+            )
+            texts.append(result.text)
+            provider_usage.append(chunk_usage)
+            provider = result.provider
+            model = result.model
+            processed_bytes += len(content)
+        merged = merge_transcript_chunks(texts)
+        if not merged:
+            raise STTProviderError(
+                "STT_EMPTY",
+                "음성에서 회의 내용을 찾지 못했습니다.",
+                retryable=False,
+            )
+        return (
+            TranscriptResult(
+                text=merged,
+                provider=provider,
+                model=model,
+                language="ko",
+                usage={"chunks": provider_usage},
+            ),
+            {
+                "chunk_count": len(split.chunks),
+                "processed_audio_bytes": processed_bytes,
+                "audio_duration_seconds": round(split.duration_seconds, 3),
+                "provider_usage": provider_usage,
+            },
+        )
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     @staticmethod
     def _file_response(file: dict[str, Any]) -> MeetingFileResponse:
