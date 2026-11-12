@@ -76,7 +76,7 @@ export interface Meeting {
 export interface ProcessingJob {
   id: string;
   meeting_id: string;
-  job_type: "analyze";
+  job_type: "extract" | "transcribe" | "analyze";
   status: "queued" | "processing" | "succeeded" | "failed";
   attempt_count: number;
   error_code: string | null;
@@ -85,6 +85,33 @@ export interface ProcessingJob {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+}
+
+export type FileProcessingStatus = "pending_upload" | "uploaded" | "processing" | "succeeded" | "failed";
+
+export interface MeetingFile {
+  id: string;
+  meeting_id: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  processing_status: FileProcessingStatus;
+  error_code: string | null;
+  created_at: string;
+}
+
+export interface UploadUrlResponse {
+  file: MeetingFile;
+  bucket: string;
+  path: string;
+  token: string;
+  signed_url: string;
+}
+
+export interface FileCompleteResponse {
+  file: MeetingFile;
+  job_id: string;
+  job_type: "extract" | "transcribe";
 }
 
 export interface MockSession {

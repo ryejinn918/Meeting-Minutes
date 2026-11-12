@@ -5,5 +5,6 @@ export const queryKeys = {
   teamMembers: (teamId: string) => ["teams", teamId, "members"] as const,
   meetings: (teamId: string) => ["meetings", teamId] as const,
   meeting: (meetingId: string) => ["meetings", "detail", meetingId] as const,
+  meetingFiles: (meetingId: string) => ["meetings", "detail", meetingId, "files"] as const,
   job: (jobId: string) => ["jobs", jobId] as const,
 };

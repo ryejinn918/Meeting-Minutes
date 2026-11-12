@@ -1,6 +1,6 @@
 # MeetFlow
 
-사내 팀용 AI 회의록 관리 모바일 PWA입니다. 현재 **3-A단계**로 Supabase 기반 회의록 저장과 OpenRouter 회의 분석 파이프라인까지 연결되어 있습니다.
+사내 팀용 AI 회의록 관리 모바일 PWA입니다. 현재 **3-B단계**로 직접 입력과 파일 기반 전문 생성, OpenRouter 회의 분석 파이프라인까지 구현되어 있습니다.
 
 ## 현재 동작 범위
 
@@ -16,9 +16,16 @@
 - AI 원본 실행 기록과 사용자 편집본 분리 저장
 - 요약·논의·결정·후속 논의 편집본 저장과 액션아이템 조회
 
+3-B 로컬 구현(새 Migration 적용 필요):
+
+- MP3/M4A/WAV와 TXT/PDF의 Private Storage signed upload
+- 파일 크기·MIME·magic bytes·SHA-256 검증
+- TXT UTF-8/BOM 및 텍스트 기반 다중 페이지 PDF 추출
+- `gpt-transcribe` 기반 OpenAI STT adapter와 비용 없는 Mock STT provider
+- 추출·전사 작업 상태 저장, 재시도, 완료 후 전문 확인·수정
+
 아직 Mock 또는 비활성 상태:
 
-- TXT/PDF/음성 업로드와 STT
 - 팀원 초대와 회의록 공유 저장
 - PDF 다운로드(TXT 브라우저 다운로드는 동작)
 - 재분석 결과 비교·적용 및 액션아이템 편집
@@ -27,7 +34,7 @@ Mock 화면은 실제 데이터와 섞지 않으며 화면에 상태를 명시�
 
 OpenRouter 실호출은 환경변수와 실제 모델 계정 상태에 따라 비용이 발생하므로 아직 end-to-end 검증을 완료하지 않았습니다. 개발·자동 테스트는 `AI_MODE=mock`을 기준으로 수행했습니다.
 
-다음 3-B단계에서는 OpenAI STT, MP3/M4A/WAV 업로드, TXT/PDF 추출, Supabase Private Storage, 추출 전문 저장·편집 및 기존 분석 파이프라인 연결을 진행합니다.
+실제 OpenAI STT 호출은 비용이 발생하므로 수행하지 않았습니다. 개발·자동 테스트는 `STT_MODE=mock`을 기준으로 수행했습니다.
 
 ## 요구사항
 
@@ -40,8 +47,9 @@ OpenRouter 실호출은 환경변수와 실제 모델 계정 상태에 따라 �
 1. Supabase 프로젝트를 만들고 Email/Password Auth를 활성화합니다.
 2. [초기 Migration](supabase/migrations/202611110001_initial_schema.sql)을 검토한 후 개발 프로젝트에 적용합니다. 저장소 작업만으로 원격 DB에는 적용되지 않습니다.
 3. AI 분석 작업을 사용하려면 [AI worker 권한 Migration](supabase/migrations/202611110002_ai_worker_grants.sql)도 검토·적용합니다. 이 Migration은 서버의 `service_role`에 분석 관련 테이블의 최소 권한만 부여하며 RLS를 비활성화하지 않습니다.
-4. Project URL, publishable key를 확인합니다. secret key는 백엔드에만 보관합니다.
-5. Site URL과 Redirect URL에 `http://localhost:5173` 및 실제 Vercel 주소를 등록합니다.
+4. 파일 업로드를 사용하려면 [3-B 파일 Migration](supabase/migrations/202611120001_file_ingestion.sql)을 검토·적용합니다. Private `meeting-files` bucket, 파일 메타데이터와 최소 Storage RLS를 생성합니다.
+5. Project URL, publishable key를 확인합니다. secret key는 백엔드에만 보관합니다.
+6. Site URL과 Redirect URL에 `http://localhost:5173` 및 실제 Vercel 주소를 등록합니다.
 
 상세 순서와 JWT 방식별 설정은 [Supabase 설정 가이드](docs/supabase-setup.md)를 참고하세요.
 
@@ -92,11 +100,16 @@ SUPABASE_JWT_MODE=auto
 OPENROUTER_API_KEY=YOUR_OPENROUTER_KEY
 OPENROUTER_ANALYSIS_MODEL=deepseek/deepseek-v3.2
 AI_MODE=mock
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+OPENAI_STT_MODEL=gpt-transcribe
+STT_MODE=mock
 ```
 
 `SUPABASE_JWT_MODE=auto`는 비대칭 JWT면 JWKS를 사용하고 legacy HS256이면 Supabase Auth `/user` endpoint로 검증합니다. 일반 사용자 요청은 사용자 access token으로 PostgREST/RLS를 통과합니다. 인증·권한을 먼저 확인한 백그라운드 분석 저장만 서버의 secret key를 사용하며, 최신 `sb_secret_...` 키는 `apikey` 헤더로만 전송합니다.
 
 `AI_MODE=mock`은 비용 없는 개발 검증용이며 결과에 Mock 표시가 포함됩니다. 실제 OpenRouter 호출은 모델 ID와 키를 설정한 뒤 `AI_MODE=real`로 명시적으로 전환해야 합니다. 운영 환경은 Mock 모드로 시작하지 않습니다.
+
+`STT_MODE=mock`은 실제 음성을 외부로 보내지 않는 개발 검증용입니다. 실제 전사는 `STT_MODE=real`로 명시적으로 전환해야 하며, `gpt-transcribe` 결과에 없는 화자나 타임스탬프를 임의로 추가하지 않습니다.
 
 현재 개발 DB에 초기 Migration만 적용된 경우 분석 작업은 `processing_jobs` 접근에서 PostgreSQL `42501`로 실패합니다. 원격 적용 전 반드시 대상 프로젝트를 확인한 뒤 다음 순서로 진행합니다.
 
@@ -125,6 +138,9 @@ ruff check .
 - `POST/GET /api/v1/meetings`
 - `GET/PATCH/DELETE /api/v1/meetings/{meeting_id}`
 - `POST /api/v1/meetings/{meeting_id}/transcript`
+- `POST /api/v1/meetings/{meeting_id}/files/upload-url`
+- `POST /api/v1/meetings/{meeting_id}/files/{file_id}/complete`
+- `GET /api/v1/meetings/{meeting_id}/files`
 - `POST /api/v1/meetings/{meeting_id}/process`
 - `GET /api/v1/jobs/{job_id}`
 - `POST /api/v1/jobs/{job_id}/retry`
@@ -136,4 +152,5 @@ ruff check .
 
 - [시스템 아키텍처](docs/architecture.md)
 - [Supabase 설정 가이드](docs/supabase-setup.md)
+- [Vercel + Render 배포 가이드](docs/deployment.md)
 - [개발 규칙](AGENTS.md)

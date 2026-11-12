@@ -6,7 +6,7 @@ from app.core.errors import AppError
 from app.db.client import SupabaseRestClient
 
 JOB_SELECT = (
-    "id,meeting_id,job_type,status,attempt_count,error_code,error_message_safe,"
+    "id,meeting_id,file_id,job_type,status,attempt_count,error_code,error_message_safe,"
     "started_at,finished_at,created_at,updated_at"
 )
 
@@ -15,7 +15,9 @@ class AIRepository:
     def __init__(self, client: SupabaseRestClient) -> None:
         self.client = client
 
-    async def create_job(self, meeting_id: UUID) -> dict[str, Any]:
+    async def create_job(
+        self, meeting_id: UUID, *, job_type: str = "analyze", file_id: UUID | None = None
+    ) -> dict[str, Any]:
         job_id = uuid4()
         await self.client.request(
             "POST",
@@ -23,7 +25,8 @@ class AIRepository:
             json={
                 "id": str(job_id),
                 "meeting_id": str(meeting_id),
-                "job_type": "analyze",
+                "job_type": job_type,
+                "file_id": str(file_id) if file_id else None,
                 "status": "queued",
                 "attempt_count": 0,
             },
@@ -42,14 +45,16 @@ class AIRepository:
         )
         return rows[0] if rows else None
 
-    async def get_active_job(self, meeting_id: UUID) -> dict[str, Any] | None:
+    async def get_active_job(
+        self, meeting_id: UUID, *, job_type: str = "analyze"
+    ) -> dict[str, Any] | None:
         rows, _ = await self.client.request(
             "GET",
             "processing_jobs",
             params={
                 "select": JOB_SELECT,
                 "meeting_id": f"eq.{meeting_id}",
-                "job_type": "eq.analyze",
+                "job_type": f"eq.{job_type}",
                 "status": "in.(queued,processing)",
                 "order": "created_at.desc",
                 "limit": "1",

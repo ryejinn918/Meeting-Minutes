@@ -1,4 +1,4 @@
-const CACHE_NAME = "meetflow-shell-v1";
+const CACHE_NAME = "meetflow-shell-v2";
 const SHELL_ASSETS = ["/", "/index.html", "/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -16,7 +16,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET" || event.request.url.includes("/api/")) return;
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
-

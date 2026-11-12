@@ -13,9 +13,11 @@
 
 ## 2. Migration 적용 순서
 
-현재 Migration은 하나이며 순서는 파일명 기준이다.
+Migration은 파일명 순서대로 적용한다.
 
 1. `supabase/migrations/202611110001_initial_schema.sql`
+2. `supabase/migrations/202611110002_ai_worker_grants.sql`
+3. `supabase/migrations/202611120001_file_ingestion.sql`
 
 Supabase CLI는 저장소 루트의 개발 의존성으로 고정되어 있으므로 `npx supabase`로 실행한다. 적용 전 Dashboard의 Project Ref가 `backend/.env`의 `SUPABASE_URL` host와 일치하는지 확인한다.
 
@@ -41,6 +43,8 @@ Dashboard SQL Editor를 사용하는 경우 파일 전체를 한 번 실행한�
 
 - `profiles`, `teams`, `team_members`, `meetings`, `meeting_transcripts`, `meeting_notes`, `action_items`
 - 미래 연동용 `meeting_shares`, `meeting_ai_runs`, `processing_jobs`
+- `meeting_files`와 `processing_jobs.file_id`
+- 비공개 `meeting-files` Storage bucket 및 `storage.objects` 최소 RLS
 - 모든 public 애플리케이션 테이블의 RLS 활성화
 - 신규 Auth 사용자 생성 시 `profiles` 행 생성
 - 팀 생성 시 creator의 owner `team_members` 행 생성
@@ -63,10 +67,12 @@ Project URL과 publishable key는 프론트엔드 및 백엔드에 설정한다.
 
 실제 프로젝트 URL과 키가 없는 환경에서는 3~7을 검증 완료로 보고하면 안 된다.
 
-## 5. 이번 단계에서 설정하지 않는 항목
+## 5. 3-B Storage 확인
 
-- Private Storage bucket 및 파일 정책
-- OpenAI/OpenRouter 키
+파일 Migration 적용 후 Dashboard의 Storage에서 `meeting-files`가 public이 아닌지 확인한다. bucket 제한은 음성 최대 25MB이며 TXT/PDF는 FastAPI에서 10MB로 더 엄격하게 검사한다. 브라우저에는 publishable key와 signed upload token만 전달하고 secret key는 백엔드에만 둔다.
+
+## 6. 이번 단계에서 설정하지 않는 항목
+
 - 실제 팀 초대 메일
 - 회의록 공유 API
 - Vercel/Render 배포 환경변수

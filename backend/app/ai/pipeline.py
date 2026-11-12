@@ -82,7 +82,7 @@ class AnalysisService:
 
     async def retry(self, job_id: UUID) -> JobResponse:
         job = await self.user_ai_repository.get_job(job_id)
-        if job is None:
+        if job is None or job["job_type"] != "analyze":
             raise AppError(404, "JOB_NOT_FOUND", "분석 작업을 찾을 수 없습니다.")
         meeting = await self.user_repository.get_meeting(UUID(job["meeting_id"]))
         if meeting is None:
@@ -122,6 +122,17 @@ class AnalysisService:
                 raise AIProviderError(
                     "TRANSCRIPT_EMPTY", "분석할 회의 전문이 없습니다.", retryable=False
                 )
+            if meeting.get("current_notes_id") and meeting.get("processing_status") == "ready":
+                await self.admin_ai_repository.update_job(
+                    job_id,
+                    {
+                        "status": "succeeded",
+                        "error_code": None,
+                        "error_message_safe": None,
+                        "finished_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+                return
             transcript_id = UUID(meeting["current_transcript_id"])
             transcript = await self.admin_repository.get_transcript(transcript_id)
             text = (transcript or {}).get("edited_text", "").strip()
@@ -275,6 +286,10 @@ class AnalysisService:
             return False
         if job.get("status") == "failed":
             return job.get("error_code") not in NON_RETRYABLE_CODES
+        if job.get("status") == "queued" and job.get("created_at"):
+            created = datetime.fromisoformat(str(job["created_at"]).replace("Z", "+00:00"))
+            elapsed_seconds = (datetime.now(UTC) - created).total_seconds()
+            return elapsed_seconds > self.settings.ai_stale_job_seconds
         if job.get("status") == "processing" and job.get("started_at"):
             started = datetime.fromisoformat(str(job["started_at"]).replace("Z", "+00:00"))
             elapsed_seconds = (datetime.now(UTC) - started).total_seconds()

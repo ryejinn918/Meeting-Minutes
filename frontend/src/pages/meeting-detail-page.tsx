@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Edit3, LockKeyhole, Save, Share2, Sparkles, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { MeetingTabs, type MeetingTab } from "@/components/shared/meeting-tabs";
 import { MockBanner } from "@/components/shared/mock-banner";
@@ -42,6 +42,7 @@ function SectionCard({ title, items, tone = "indigo" }: { title: string; items: 
 
 export function MeetingDetailPage() {
   const { id = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<MeetingTab>("summary");
@@ -52,6 +53,10 @@ export function MeetingDetailPage() {
   const meeting = meetingQuery.data;
   const teamQuery = useQuery({ queryKey: queryKeys.team(meeting?.team_id ?? "pending"), queryFn: () => apiService.getTeam(meeting!.team_id), enabled: Boolean(meeting) });
   const [draft, setDraft] = useState({ title: "", date: "", transcript: "", summary: "", discussions: "", decisions: "", followUps: "" });
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "transcript") setTab("transcript");
+  }, [searchParams]);
 
   useEffect(() => {
     if (meeting) setDraft({
@@ -119,7 +124,7 @@ export function MeetingDetailPage() {
 
   return <><PageHeader back title={meeting.title} description={`${formatMeetingDate(meeting.meeting_at)} · ${meeting.created_by.name}`} action={<StatusBadge status={meeting.processing_status} />} />
     <div className="mb-4 flex flex-wrap gap-2">{meeting.is_shared_with_me && <Badge className="bg-violet-50 text-violet-700"><LockKeyhole className="h-3.5 w-3.5" />공유받은 회의록 · {canEdit ? "관리자 편집 가능" : "읽기 전용"}</Badge>}</div>
-    <MockBanner message="회의록 저장과 내용 정리는 실제 서버 기능입니다. 팀원 공유 화면은 아직 Mock 상태입니다." />
+    <MockBanner message="회의록 저장, 파일에서 전문 가져오기와 내용 정리는 실제 서버 기능입니다. 팀원 공유 화면은 아직 Mock 상태입니다." />
     <div className="my-5 grid grid-cols-4 gap-2"><Button disabled={!canEdit} onClick={() => setEditing((value) => !value)} variant={editing ? "secondary" : "outline"}><Edit3 className="h-4 w-4" /><span className="hidden sm:inline">편집</span></Button><Button asChild={canEdit} disabled={!canEdit} variant="outline">{canEdit ? <Link to={`/meetings/${id}/share`}><Share2 className="h-4 w-4" /><span className="hidden sm:inline">공유</span></Link> : <span><Users className="h-4 w-4" /></span>}</Button><Button onClick={downloadText} variant="outline"><Download className="h-4 w-4" /><span className="hidden sm:inline">TXT</span></Button><Button disabled={!canEdit} onClick={() => setDeleteOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">삭제</span></Button></div>
     {editing && <Card className="mb-5"><CardContent className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold text-slate-700">회의 제목<Input className="mt-2" maxLength={100} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} value={draft.title} /></label><label className="text-sm font-bold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDraft((value) => ({ ...value, date: event.target.value }))} type="date" value={draft.date} /></label></CardContent></Card>}
     {saveStatus !== "idle" && <div className="mb-3 text-right"><InlineSavingState state={saveStatus} /></div>}

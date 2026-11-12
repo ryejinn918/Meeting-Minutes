@@ -32,8 +32,9 @@ export function ProcessingPage() {
   useEffect(() => {
     if (jobQuery.data?.status !== "succeeded") return;
     void queryClient.invalidateQueries({ queryKey: queryKeys.meeting(id) });
-    navigate(`/meetings/${id}`, { replace: true });
-  }, [id, jobQuery.data?.status, navigate, queryClient]);
+    const tab = jobQuery.data.job_type === "analyze" ? "summary" : "transcript";
+    navigate(`/meetings/${id}?tab=${tab}`, { replace: true });
+  }, [id, jobQuery.data, navigate, queryClient]);
 
   if (!jobId) {
     return <><PageHeader back title="정리 상태를 찾을 수 없어요" /><p className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">회의록으로 돌아가 다시 정리를 시작해 주세요.</p></>;
@@ -42,20 +43,21 @@ export function ProcessingPage() {
   const job = jobQuery.data;
   const failed = job?.status === "failed";
   const completed = job?.status === "succeeded";
-  const title = failed
-    ? "회의록을 정리하지 못했어요."
-    : completed
-      ? "회의록 정리가 완료됐어요!"
-      : !job || job.status === "queued"
-        ? "회의록을 정리할 준비를 하고 있어요."
-        : "회의록을 정리하고 있어요";
+  const stale = !failed && !completed && Boolean(job?.retryable);
+  const isFileJob = job?.job_type === "extract" || job?.job_type === "transcribe";
+  const title = isFileJob
+    ? failed ? "파일을 처리하지 못했어요." : completed ? "회의 내용을 모두 가져왔어요." : job?.job_type === "transcribe" ? "녹음된 회의 내용을 글로 옮기고 있어요." : "문서에서 회의 내용을 가져오고 있어요."
+    : failed ? "회의록을 정리하지 못했어요." : completed ? "회의록 정리가 완료됐어요!" : !job || job.status === "queued" ? "회의록을 정리할 준비를 하고 있어요." : "회의록을 정리하고 있어요";
   const description = failed
     ? "잠시 후 다시 시도해 주세요."
     : completed
-      ? "회의록에서 정리된 내용을 확인할 수 있어요."
-      : "회의 내용을 살펴보고 중요한 내용을 정리하고 있어요.";
+      ? isFileJob ? "내용을 확인하고 필요한 부분을 수정해 주세요." : "회의록에서 정리된 내용을 확인할 수 있어요."
+      : isFileJob ? "원본 파일은 안전하게 보관되고 있어요." : "회의 내용을 살펴보고 중요한 내용을 정리하고 있어요.";
+  const pageDescription = isFileJob
+    ? "다른 화면으로 이동해도 괜찮아요. 처리가 끝나면 회의록에서 내용을 확인할 수 있어요."
+    : "다른 화면으로 이동해도 괜찮아요. 분석이 끝나면 회의록에서 결과를 확인할 수 있어요.";
 
-  return <><PageHeader back title={title} description="다른 화면으로 이동해도 괜찮아요. 분석이 끝나면 회의록에서 결과를 확인할 수 있어요." />
+  return <><PageHeader back title={title} description={pageDescription} />
     <Card className="mt-5 overflow-hidden">
       <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 to-violet-500" />
       <CardContent aria-live="polite" className="flex min-h-72 flex-col items-center justify-center p-6 text-center" role="status">
@@ -70,8 +72,8 @@ export function ProcessingPage() {
     {jobQuery.isError && <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{jobQuery.error.message}</p>}
     {retry.error && <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{retry.error.message}</p>}
     <div className="mt-5 grid gap-2 sm:grid-cols-2">
-      {failed && <Button disabled={!job?.retryable || retry.isPending} onClick={() => retry.mutate()}><RefreshCw className="h-4 w-4" />{retry.isPending ? "요청 중..." : "다시 시도하기"}</Button>}
-      <Button asChild variant="outline"><Link to={`/meetings/${id}`}>회의록으로 돌아가기</Link></Button>
+      {(failed || stale) && <Button disabled={!job?.retryable || retry.isPending} onClick={() => retry.mutate()}><RefreshCw className="h-4 w-4" />{retry.isPending ? "요청 중..." : "다시 시도하기"}</Button>}
+      <Button asChild variant="outline"><Link to={`/meetings/${id}${isFileJob ? "?tab=transcript" : ""}`}>회의록으로 돌아가기</Link></Button>
     </div>
   </>;
 }

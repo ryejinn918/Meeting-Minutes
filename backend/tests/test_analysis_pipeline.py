@@ -1,4 +1,5 @@
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -161,3 +162,29 @@ async def test_non_member_cannot_start_analysis() -> None:
     assert error.value.status_code == 403
     assert error.value.code == "TEAM_ACCESS_DENIED"
     assert ai_repository.runs == []
+
+
+@pytest.mark.asyncio
+async def test_stale_queued_analysis_can_be_retried() -> None:
+    repository = FakeMeetingRepository()
+    ai_repository = FakeAIRepository()
+    ai_repository.job["created_at"] = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+
+    job = await service(repository, ai_repository).get_job(JOB_ID)
+
+    assert job.status == "queued"
+    assert job.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_completed_analysis_is_not_duplicated_after_worker_restart() -> None:
+    repository = FakeMeetingRepository()
+    repository.meeting["processing_status"] = "ready"
+    repository.meeting["current_notes_id"] = str(uuid4())
+    ai_repository = FakeAIRepository()
+
+    await service(repository, ai_repository).run(JOB_ID)
+
+    assert ai_repository.job["status"] == "succeeded"
+    assert ai_repository.runs == []
+    assert ai_repository.notes == []

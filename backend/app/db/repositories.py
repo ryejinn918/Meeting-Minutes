@@ -5,7 +5,7 @@ from app.core.errors import AppError
 from app.db.client import SupabaseRestClient
 
 MEETING_SELECT = (
-    "id,team_id,title,meeting_at,created_by,processing_status,"
+    "id,team_id,title,meeting_at,source_type,created_by,processing_status,"
     "current_transcript_id,current_notes_id,version"
 )
 
@@ -187,7 +187,17 @@ class MeetFlowRepository:
         )
         return rows[0] if rows else None
 
-    async def create_transcript(self, meeting_id: UUID, user_id: UUID, text: str) -> dict[str, Any]:
+    async def create_generated_transcript(
+        self,
+        *,
+        meeting_id: UUID,
+        user_id: UUID,
+        source: str,
+        text: str,
+        language: str | None = None,
+        stt_provider: str | None = None,
+        stt_model: str | None = None,
+    ) -> dict[str, Any]:
         transcript_id = uuid4()
         await self.client.request(
             "POST",
@@ -195,9 +205,12 @@ class MeetFlowRepository:
             json={
                 "id": str(transcript_id),
                 "meeting_id": str(meeting_id),
-                "source": "direct",
+                "source": source,
                 "original_text": text,
                 "edited_text": text,
+                "language": language,
+                "stt_provider": stt_provider,
+                "stt_model": stt_model,
                 "created_by": str(user_id),
             },
             prefer="return=minimal",
@@ -210,6 +223,67 @@ class MeetFlowRepository:
                 "회의 전문 저장 결과를 확인할 수 없습니다.",
             )
         return transcript
+
+    async def create_transcript(self, meeting_id: UUID, user_id: UUID, text: str) -> dict[str, Any]:
+        return await self.create_generated_transcript(
+            meeting_id=meeting_id,
+            user_id=user_id,
+            source="direct",
+            text=text,
+        )
+
+    async def create_meeting_file(self, values: dict[str, Any]) -> dict[str, Any]:
+        await self.client.request(
+            "POST", "meeting_files", json=values, prefer="return=minimal"
+        )
+        file = await self.get_meeting_file(UUID(values["id"]))
+        if file is None:
+            raise AppError(502, "FILE_CREATE_INCONSISTENT", "파일 정보를 확인할 수 없습니다.")
+        return file
+
+    async def get_meeting_file(self, file_id: UUID) -> dict[str, Any] | None:
+        rows, _ = await self.client.request(
+            "GET",
+            "meeting_files",
+            params={
+                "select": (
+                    "id,meeting_id,uploaded_by,storage_bucket,storage_path,original_name,"
+                    "mime_type,size_bytes,sha256,processing_status,error_code,created_at"
+                ),
+                "id": f"eq.{file_id}",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def list_meeting_files(self, meeting_id: UUID) -> list[dict[str, Any]]:
+        rows, _ = await self.client.request(
+            "GET",
+            "meeting_files",
+            params={
+                "select": (
+                    "id,meeting_id,uploaded_by,storage_bucket,storage_path,original_name,"
+                    "mime_type,size_bytes,sha256,processing_status,error_code,created_at"
+                ),
+                "meeting_id": f"eq.{meeting_id}",
+                "order": "created_at.desc",
+            },
+        )
+        return rows
+
+    async def update_meeting_file(
+        self, file_id: UUID, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        await self.client.request(
+            "PATCH",
+            "meeting_files",
+            params={"id": f"eq.{file_id}"},
+            json=values,
+            prefer="return=minimal",
+        )
+        file = await self.get_meeting_file(file_id)
+        if file is None:
+            raise AppError(404, "FILE_NOT_FOUND", "파일 정보를 찾을 수 없습니다.")
+        return file
 
     async def update_transcript(self, transcript_id: UUID, text: str) -> dict[str, Any]:
         rows, _ = await self.client.request(

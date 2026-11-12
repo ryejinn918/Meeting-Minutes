@@ -58,6 +58,7 @@ async def test_create_meeting_avoids_insert_returning_rls_check() -> None:
     assert client.calls[0]["prefer"] == "return=minimal"
     assert UUID(client.calls[0]["json"]["id"])
     assert client.calls[1]["method"] == "GET"
+    assert "source_type" in client.calls[1]["params"]["select"].split(",")
 
 
 @pytest.mark.asyncio

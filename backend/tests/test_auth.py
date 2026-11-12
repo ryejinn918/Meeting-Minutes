@@ -37,6 +37,21 @@ def test_analysis_endpoint_requires_bearer_token() -> None:
     assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
 
 
+def test_file_upload_endpoint_requires_bearer_token() -> None:
+    response = TestClient(app).post(
+        "/api/v1/meetings/33333333-3333-4333-8333-333333333333/files/upload-url",
+        json={
+            "filename": "meeting.txt",
+            "content_type": "text/plain",
+            "size_bytes": 10,
+            "sha256": "0" * 64,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+
 def test_me_uses_verified_user_dependency() -> None:
     app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
         id=USER_ID, email="minji@example.com", access_token="verified-token"

@@ -9,7 +9,7 @@ class MeetingCreate(BaseModel):
     team_id: UUID
     title: str = Field(min_length=1, max_length=100)
     meeting_at: datetime
-    source_type: Literal["direct"] = "direct"
+    source_type: Literal["direct", "txt", "pdf", "audio"] = "direct"
 
 
 class MeetingUpdate(BaseModel):

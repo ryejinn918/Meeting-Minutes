@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class JobResponse(BaseModel):
     id: UUID
     meeting_id: UUID
-    job_type: Literal["analyze"]
+    job_type: Literal["extract", "transcribe", "analyze"]
     status: Literal["queued", "processing", "succeeded", "failed"]
     attempt_count: int
     error_code: str | None = None

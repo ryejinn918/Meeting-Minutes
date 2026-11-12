@@ -1,7 +1,7 @@
 import type { ApiErrorEnvelope } from "@/types/api";
 import { supabase } from "@/lib/supabase";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "");
 
 export class ApiClientError extends Error {
   constructor(public readonly status: number, public readonly payload: ApiErrorEnvelope) {
@@ -10,6 +10,7 @@ export class ApiClientError extends Error {
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!apiBaseUrl) throw new Error("API 서버 주소가 설정되지 않았습니다.");
   if (!supabase) throw new Error("Supabase 환경변수가 설정되지 않았습니다.");
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("로그인이 필요합니다.");

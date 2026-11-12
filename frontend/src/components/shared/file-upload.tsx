@@ -20,12 +20,11 @@ export function FileUpload({ mode, file, onChange }: { mode: "audio" | "document
       ) : (
         <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600"><Icon className="h-5 w-5" /></span>
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-800">{file.name}</p><p className="mt-0.5 text-xs text-slate-500">{formatFileSize(file.size)} · 브라우저에서만 선택됨</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-800">{file.name}</p><p className="mt-0.5 text-xs text-slate-500">{formatFileSize(file.size)}</p><button className="mt-1 text-xs font-semibold text-indigo-600" onClick={() => inputRef.current?.click()} type="button">다른 파일 선택</button></div>
           <Button aria-label="선택한 파일 제거" onClick={() => onChange(null)} size="icon" variant="ghost"><Trash2 className="h-4 w-4" /></Button>
         </div>
       )}
-      <input ref={inputRef} accept={accept} className="sr-only" onChange={(event) => onChange(event.target.files?.[0] ?? null)} type="file" />
+      <input ref={inputRef} accept={accept} className="sr-only" onChange={(event) => { onChange(event.target.files?.[0] ?? null); event.target.value = ""; }} type="file" />
     </div>
   );
 }
-

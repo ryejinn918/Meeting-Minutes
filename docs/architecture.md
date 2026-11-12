@@ -1,12 +1,12 @@
 # MeetFlow 시스템 아키텍처
 
-> 상태: 3-A단계 OpenRouter 회의 분석 파이프라인 구현 기준선  
-> 최종 갱신: 2026-11-11  
+> 상태: 3-B단계 Private Storage 파일 수집 및 STT/문서 추출 구현 기준선
+> 최종 갱신: 2026-11-12
 > 목표: 1인 + AI 코딩 도구로 2일 안에 검증 가능한 모바일 PWA MVP 완성
 
 ## 0. 범위와 전제
 
-저장소에는 `frontend/`, `backend/`, `supabase/` 구조가 생성되어 있다. 2-A단계에서는 Supabase Auth, 사용자 JWT 기반 PostgREST/RLS, 팀과 직접 입력 회의록 저장을 구현한다. 파일 업로드, AI 분석, 팀원 초대와 실제 공유 저장은 후속 단계로 남긴다.
+저장소에는 Supabase Auth/PostgreSQL, 직접 입력 회의록, OpenRouter 분석과 3-B 파일 수집 코드가 구현되어 있다. `202611120001_file_ingestion.sql`은 저장소에만 작성되어 있으며 승인 전 원격 DB에는 적용하지 않는다. 팀원 초대·공유와 배포는 후속 단계다.
 
 MVP는 업로드된 TXT/PDF/음성 또는 직접 입력한 전문을 저장하고, 음성은 STT로 변환한 다음 LLM 한 번으로 요약·논의·결정·액션아이템·후속 논의를 구조화한다. 결과는 사용자가 수정하고, 같은 팀의 선택된 사용자에게만 공유하며, TXT/PDF로 내보낼 수 있다.
 
@@ -57,6 +57,8 @@ Supabase                 외부 AI
 MVP는 별도 큐를 추가하지 않고 FastAPI의 프로세스 내 background task를 사용하되 `processing_jobs`를 영속 상태 원장으로 둔다. API는 생성 직후 `202 Accepted`와 `job_id`를 반환하고 UI는 상태를 폴링한다. Render 재시작 시 실행 중 작업이 유실될 수 있으므로 `processing` 장기 체류 작업을 `failed/retryable`로 복구하고 사용자가 재시도할 수 있게 한다. 이 방식은 MVP 타협이며, 다중 인스턴스 또는 신뢰성 요구가 생기면 별도 worker + managed queue로 교체한다.
 
 동일 회의·단계에는 활성 작업이 하나만 존재하도록 부분 unique index 또는 원자적 상태 전이로 중복 실행을 막는다. 외부 호출 전후로 상태를 저장하고, 재시도는 지수 backoff를 적용한 최대 2회로 제한한다.
+
+Render Free 배포에서도 프로세스 내부 `BackgroundTasks`는 서버 재시작을 견디는 durable queue가 아니다. 실패 작업뿐 아니라 설정된 stale 시간보다 오래된 queued/processing 작업을 사용자가 재시도할 수 있게 하며, 이미 현재 notes가 연결된 ready 회의는 worker 재실행 시 결과를 중복 생성하지 않는다. 원본 파일과 transcript는 먼저 영속 저장하므로 task 중단으로 삭제하지 않는다. 처리 URL을 잃은 작업의 자동 재개와 다중 테이블 exactly-once 저장은 아직 보장하지 않으며, 자세한 운영 한계는 `docs/deployment.md`를 따른다.
 
 백그라운드 작업은 요청 사용자의 회의 관리 권한을 사용자 JWT로 먼저 검사한 뒤 서버 secret key를 사용한다. 최신 `sb_secret_...` 키는 JWT가 아니므로 PostgREST의 `apikey` 헤더에만 넣고, legacy service-role JWT일 때만 `Authorization: Bearer`를 사용한다. RLS 우회 여부와 별개로 PostgreSQL GRANT가 필요하므로 `202611110002_ai_worker_grants.sql`에서 분석에 필요한 테이블의 최소 권한만 `service_role`에 부여한다.
 
@@ -194,13 +196,15 @@ FastAPI가 secret/service-role key를 사용할 때 RLS가 우회된다는 점�
 3. **전문 생성**:
    - 직접 입력/TXT: UTF-8 디코딩, BOM·개행 정규화
    - PDF: 텍스트 기반 PDF만 추출. 스캔 OCR은 MVP 제외이며 명확한 오류 제공
-   - 음성: OpenAI adapter 호출. 2026-11-11 공식 문서의 신규 파일 전사 권장 ID인 `gpt-transcribe`를 `OPENAI_STT_MODEL` 기본 예시로 사용한다. 실제 배포 시 재확인한다.
+   - 음성: OpenAI adapter 호출. 2026-11-12 공식 문서의 파일 전사 권장 ID인 `gpt-transcribe`를 사용한다. 화자 라벨과 word timestamp 예시는 종료 예정 모델에만 있으므로 이번 단계에서는 저장하거나 추측하지 않는다.
 4. **분석**: transcript만 OpenRouter adapter에 전달한다. 2026-11-11 카탈로그 확인 기준 `deepseek/deepseek-v3.2`는 structured outputs(`response_format`)을 지원하며 이를 배포 환경의 `OPENROUTER_ANALYSIS_MODEL`에 pin한다. 모델 ID는 코드에 고정하지 않고 환경변수로 유지하며 배포 전 가용성·가격·context limit을 다시 확인한다.
 5. **검증**: provider의 JSON schema/structured output을 사용하더라도 최종 경계는 Pydantic 모델이다. 실패 시 schema 오류를 포함한 짧은 repair prompt로 1회, 일시 오류에 1회까지만 재시도한다.
 6. **저장**: 검증된 AI 출력은 `meeting_ai_runs`에 불변 저장하고, 별도 transaction으로 `meeting_notes`/`action_items` 편집본을 만든다.
 7. **상태/오류**: 각 단계 전후에 meeting/job 상태를 기록한다. UI에는 안전한 오류 코드와 재시도 행동만 노출하고 provider 원문 오류/키/본문은 로그에 남기지 않는다.
 
 OpenAI 공식 파일 전사 문서상 단일 요청 파일 제한은 25MB다. 2일 MVP는 음성 업로드를 25MB 이하로 제한한다. 더 큰 파일 분할/문맥 연결/ffmpeg 처리는 후속 범위다. 참고: [OpenAI File transcription](https://developers.openai.com/api/docs/guides/speech-to-text), [OpenRouter DeepSeek models](https://openrouter.ai/deepseek).
+
+파일은 서버가 `team_id/meeting_id/file_id/source.ext` 경로와 `meeting_files` 행을 만든 뒤 Supabase signed upload token으로 private bucket에 올린다. complete 요청에서 서버가 원본을 다시 읽어 크기, SHA-256, MIME/확장자와 magic bytes를 검증한 경우에만 `extract` 또는 `transcribe` job을 생성한다. 잘못된 object는 삭제하고, 업로드 후 complete가 호출되지 않은 stale object는 후속 정리 작업 대상으로 기록한다.
 
 ### 4.2 Provider Adapter 계약
 
@@ -263,6 +267,7 @@ system prompt에는 다음을 고정한다: 원문 외 사실 금지, 제안/추
 | `POST` | `/meetings/{meeting_id}/transcript` | 직접 입력 원문 생성 또는 edited_text 수정 |
 | `POST` | `/meetings/{meeting_id}/files/upload-url` | MIME/size/name 검증 후 1회성 signed upload URL + file_id 반환 |
 | `POST` | `/meetings/{meeting_id}/files/{file_id}/complete` | 실제 object metadata 검증 후 업로드 확정 |
+| `GET` | `/meetings/{meeting_id}/files` | 권한이 있는 사용자의 파일 메타데이터 조회 |
 | `GET` | `/meetings/{meeting_id}/files/{file_id}/download-url` | 현재 권한 재검사 후 짧은 signed URL 반환 |
 | `POST` | `/meetings/{meeting_id}/process` | extract/STT/analysis 작업 enqueue; `202 {job_id}`; idempotency key 지원 |
 | `POST` | `/meetings/{meeting_id}/reanalyze` | 현재 edited transcript로 새 AI run 생성; 기존 편집본 덮어쓰기 전 확인 필요 |
@@ -384,6 +389,10 @@ SUPABASE_JWT_AUDIENCE=authenticated
 SUPABASE_STORAGE_BUCKET=meeting-files
 OPENAI_API_KEY=
 OPENAI_STT_MODEL=gpt-transcribe
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_TIMEOUT_SECONDS=90
+OPENAI_MAX_RETRIES=1
+STT_MODE=mock
 OPENROUTER_API_KEY=
 OPENROUTER_ANALYSIS_MODEL=deepseek/deepseek-v3.2
 AI_MODE=real

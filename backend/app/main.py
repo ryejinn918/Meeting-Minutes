@@ -47,8 +47,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.frontend_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 # Health remains at the deployment-friendly root path. Future business routes use /api/v1.

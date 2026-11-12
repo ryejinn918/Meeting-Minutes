@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api-client";
-import type { Meeting, ProcessingJob, Team, TeamDetail, TeamMember, User } from "@/types/api";
+import { supabase } from "@/lib/supabase";
+import type { FileCompleteResponse, Meeting, MeetingFile, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
 
 interface MeApiResponse {
   id: string;
@@ -41,10 +42,10 @@ export const apiService = {
   async getMeeting(id: string): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}`));
   },
-  async createMeeting(input: { team_id: string; title: string; meeting_at: string }): Promise<Meeting> {
+  async createMeeting(input: { team_id: string; title: string; meeting_at: string; source_type?: "direct" | "txt" | "pdf" | "audio" }): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>("/api/v1/meetings", {
       method: "POST",
-      body: JSON.stringify({ ...input, source_type: "direct" }),
+      body: JSON.stringify({ ...input, source_type: input.source_type ?? "direct" }),
     }));
   },
   async updateMeeting(id: string, input: { title?: string; meeting_at?: string; version: number }): Promise<Meeting> {
@@ -69,4 +70,30 @@ export const apiService = {
   startAnalysis: (id: string) => apiRequest<ProcessingJob>(`/api/v1/meetings/${id}/process`, { method: "POST" }),
   getJob: (id: string) => apiRequest<ProcessingJob>(`/api/v1/jobs/${id}`),
   retryJob: (id: string) => apiRequest<ProcessingJob>(`/api/v1/jobs/${id}/retry`, { method: "POST" }),
+  createUploadUrl: (meetingId: string, input: { filename: string; content_type: string; size_bytes: number; sha256: string }) =>
+    apiRequest<UploadUrlResponse>(`/api/v1/meetings/${meetingId}/files/upload-url`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  async uploadFile(input: UploadUrlResponse, file: File): Promise<void> {
+    if (!supabase) throw new Error("파일 업로드 설정을 확인해 주세요.");
+    const { error } = await supabase.storage
+      .from(input.bucket)
+      .uploadToSignedUrl(input.path, input.token, file, {
+        contentType: input.file.mime_type,
+        upsert: false,
+      });
+    if (error) throw new Error("파일을 업로드하지 못했어요. 다시 시도해 주세요.");
+  },
+  completeUpload: (meetingId: string, fileId: string) =>
+    apiRequest<FileCompleteResponse>(`/api/v1/meetings/${meetingId}/files/${fileId}/complete`, {
+      method: "POST",
+    }),
+  getMeetingFiles: (meetingId: string) =>
+    apiRequest<MeetingFile[]>(`/api/v1/meetings/${meetingId}/files`),
 };
+
+export async function sha256File(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
