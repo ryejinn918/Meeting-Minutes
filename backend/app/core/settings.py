@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     stt_max_chunks: int = 24
     stt_max_audio_seconds: int = 14_400
     openai_api_key: str = ""
-    openai_stt_model: str = "gpt-transcribe"
+    openai_stt_model: str = "gpt-4o-transcribe-diarize"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_timeout_seconds: float = 90.0
     openai_max_retries: int = 1

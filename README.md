@@ -21,7 +21,7 @@
 - MP3/M4A/WAV와 TXT/PDF의 Private Storage signed upload
 - 파일 크기·MIME·magic bytes·SHA-256 검증
 - TXT UTF-8/BOM 및 텍스트 기반 다중 페이지 PDF 추출
-- `gpt-transcribe` 기반 OpenAI STT adapter와 비용 없는 Mock STT provider
+- `gpt-4o-transcribe-diarize` 기반 화자 분리·발화 타임스탬프와 비용 없는 Mock STT provider
 - 25MB 초과 음성을 FFmpeg로 10분 단위 변환하고 2초 중첩 전사 결과를 순서대로 병합
 - 6MB 초과 파일의 Supabase resumable TUS 업로드와 구간별 STT checkpoint
 - 추출·전사 작업 상태 저장, 재시도, 완료 후 전문 확인·수정
@@ -51,8 +51,9 @@ OpenRouter 실호출은 환경변수와 실제 모델 계정 상태에 따라 �
 3. AI 분석 작업을 사용하려면 [AI worker 권한 Migration](supabase/migrations/202611110002_ai_worker_grants.sql)도 검토·적용합니다. 이 Migration은 서버의 `service_role`에 분석 관련 테이블의 최소 권한만 부여하며 RLS를 비활성화하지 않습니다.
 4. 파일 업로드를 사용하려면 [3-B 파일 Migration](supabase/migrations/202611120001_file_ingestion.sql)을 검토·적용합니다. Private `meeting-files` bucket, 파일 메타데이터와 최소 Storage RLS를 생성합니다.
 5. 대용량 음성을 사용하려면 [대용량 음성 Migration](supabase/migrations/202611120002_large_audio_chunking.sql)을 추가로 검토·적용합니다. DB 하드캡, Storage 상한, 비공개 chunk checkpoint를 생성합니다.
-6. Project URL, publishable key를 확인합니다. secret key는 백엔드에만 보관합니다.
-7. Site URL과 Redirect URL에 `http://localhost:5173` 및 실제 Vercel 주소를 등록합니다.
+6. 화자 분리 전사를 사용하려면 [화자 분리 Migration](supabase/migrations/202611120003_diarized_transcripts.sql)을 검토·적용합니다. 발화 구간과 화자 표시명을 저장하며 기존 전문은 그대로 유지합니다.
+7. Project URL, publishable key를 확인합니다. secret key는 백엔드에만 보관합니다.
+8. Site URL과 Redirect URL에 `http://localhost:5173` 및 실제 Vercel 주소를 등록합니다.
 
 상세 순서와 JWT 방식별 설정은 [Supabase 설정 가이드](docs/supabase-setup.md)를 참고하세요.
 
@@ -105,7 +106,7 @@ OPENROUTER_API_KEY=YOUR_OPENROUTER_KEY
 OPENROUTER_ANALYSIS_MODEL=deepseek/deepseek-v3.2
 AI_MODE=mock
 OPENAI_API_KEY=YOUR_OPENAI_KEY
-OPENAI_STT_MODEL=gpt-transcribe
+OPENAI_STT_MODEL=gpt-4o-transcribe-diarize
 STT_MODE=mock
 ```
 
@@ -113,7 +114,7 @@ STT_MODE=mock
 
 `AI_MODE=mock`은 비용 없는 개발 검증용이며 결과에 Mock 표시가 포함됩니다. 실제 OpenRouter 호출은 모델 ID와 키를 설정한 뒤 `AI_MODE=real`로 명시적으로 전환해야 합니다. 운영 환경은 Mock 모드로 시작하지 않습니다.
 
-`STT_MODE=mock`은 실제 음성을 외부로 보내지 않는 개발 검증용입니다. 실제 전사는 `STT_MODE=real`로 명시적으로 전환해야 하며, `gpt-transcribe` 결과에 없는 화자나 타임스탬프를 임의로 추가하지 않습니다.
+`STT_MODE=mock`은 실제 음성을 외부로 보내지 않는 개발 검증용입니다. 실제 전사는 `STT_MODE=real`로 명시적으로 전환해야 합니다. 화자 라벨은 조각별 범위로만 유지하며 서로 다른 조각의 동일 라벨을 같은 사람으로 추측하지 않습니다.
 
 현재 개발 DB에 초기 Migration만 적용된 경우 분석 작업은 `processing_jobs` 접근에서 PostgreSQL `42501`로 실패합니다. 원격 적용 전 반드시 대상 프로젝트를 확인한 뒤 다음 순서로 진행합니다.
 

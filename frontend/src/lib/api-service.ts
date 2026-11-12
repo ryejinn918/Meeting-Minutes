@@ -57,6 +57,21 @@ export const apiService = {
   async saveTranscript(id: string, text: string): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}/transcript`, { method: "POST", body: JSON.stringify({ text }) }));
   },
+  async updateTranscriptSpeaker(
+    meetingId: string,
+    speakerId: string,
+    displayName: string,
+  ): Promise<Meeting> {
+    return normalizeMeeting(
+      await apiRequest<Meeting>(
+        `/api/v1/meetings/${meetingId}/transcript/speakers/${speakerId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ display_name: displayName }),
+        },
+      ),
+    );
+  },
   async updateNotes(id: string, input: {
     summary: string;
     key_discussions: Array<{ id: string; text: string; evidence?: string }>;

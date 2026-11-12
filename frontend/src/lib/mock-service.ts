@@ -58,6 +58,8 @@ export const mockService = {
       meeting_at: input.meeting_at,
       transcript_original: input.transcript_original,
       transcript_edited: input.transcript_original,
+      transcript_speakers: [],
+      transcript_segments: [],
       created_by: currentUser,
       processing_status: "analyzing",
       is_mine: true,

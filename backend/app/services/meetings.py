@@ -10,6 +10,9 @@ from app.schemas.meetings import (
     MeetingNotesUpdate,
     MeetingResponse,
     MeetingUpdate,
+    TranscriptSegmentResponse,
+    TranscriptSpeakerResponse,
+    TranscriptSpeakerUpdate,
     UserSummary,
     normalize_items,
 )
@@ -138,6 +141,39 @@ class MeetingService:
         )
         return await self._hydrate(version_update)
 
+    async def update_transcript_speaker(
+        self,
+        meeting_id: UUID,
+        speaker_id: UUID,
+        payload: TranscriptSpeakerUpdate,
+    ) -> MeetingResponse:
+        meeting = await self._get_visible(meeting_id)
+        await self.authorization.require_meeting_manager(meeting)
+        transcript_id = (
+            UUID(meeting["current_transcript_id"])
+            if meeting.get("current_transcript_id")
+            else None
+        )
+        speakers = await self.repository.list_transcript_speakers(transcript_id)
+        speaker = next(
+            (item for item in speakers if UUID(item["id"]) == speaker_id),
+            None,
+        )
+        if speaker is None:
+            raise AppError(404, "TRANSCRIPT_SPEAKER_NOT_FOUND", "화자 정보를 찾을 수 없습니다.")
+        display_name = payload.display_name.strip()
+        await self.repository.update_transcript_speaker(
+            speaker_id, display_name
+        )
+        transcript = await self.repository.get_transcript(transcript_id)
+        if transcript and isinstance(transcript.get("edited_text"), str):
+            old_prefix = f"] {speaker['display_name']}: "
+            new_prefix = f"] {display_name}: "
+            edited_text = transcript["edited_text"].replace(old_prefix, new_prefix)
+            if edited_text != transcript["edited_text"]:
+                await self.repository.update_transcript(transcript_id, edited_text)
+        return await self._hydrate(meeting)
+
     async def _get_visible(self, meeting_id: UUID) -> dict:
         meeting = await self.repository.get_meeting(meeting_id)
         if meeting is None:
@@ -156,6 +192,16 @@ class MeetingService:
         transcript = await self.repository.get_transcript(
             UUID(meeting["current_transcript_id"]) if meeting.get("current_transcript_id") else None
         )
+        transcript_id = (
+            UUID(meeting["current_transcript_id"])
+            if meeting.get("current_transcript_id")
+            else None
+        )
+        speakers = await self.repository.list_transcript_speakers(transcript_id)
+        segments = await self.repository.list_transcript_segments(transcript_id)
+        speaker_names = {
+            str(item["id"]): item["display_name"] for item in speakers
+        }
         notes = await self.repository.get_notes(
             UUID(meeting["current_notes_id"]) if meeting.get("current_notes_id") else None
         )
@@ -187,6 +233,27 @@ class MeetingService:
             summary=(notes or {}).get("summary", ""),
             transcript_original=(transcript or {}).get("original_text", ""),
             transcript_edited=(transcript or {}).get("edited_text", ""),
+            transcript_speakers=[
+                TranscriptSpeakerResponse(
+                    id=item["id"],
+                    provider_label=item["provider_label"],
+                    display_name=item["display_name"],
+                )
+                for item in speakers
+            ],
+            transcript_segments=[
+                TranscriptSegmentResponse(
+                    id=item["id"],
+                    speaker_id=item["speaker_id"],
+                    speaker_name=speaker_names.get(
+                        str(item["speaker_id"]), "알 수 없는 화자"
+                    ),
+                    start_seconds=float(item["start_seconds"]),
+                    end_seconds=float(item["end_seconds"]),
+                    text=item["original_text"],
+                )
+                for item in segments
+            ],
             key_discussions=normalize_items((notes or {}).get("key_discussions")),
             decisions=normalize_items((notes or {}).get("decisions")),
             follow_ups=normalize_items((notes or {}).get("follow_ups")),

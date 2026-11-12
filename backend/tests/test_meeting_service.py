@@ -4,12 +4,14 @@ from uuid import UUID
 import pytest
 
 from app.core.security import AuthenticatedUser
+from app.schemas.meetings import TranscriptSpeakerUpdate
 from app.services.meetings import MeetingService
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
 TEAM_ID = UUID("22222222-2222-4222-8222-222222222222")
 MEETING_ID = UUID("33333333-3333-4333-8333-333333333333")
 TRANSCRIPT_ID = UUID("44444444-4444-4444-8444-444444444444")
+SPEAKER_ID = UUID("55555555-5555-4555-8555-555555555555")
 
 
 class PartialTranscriptRepository:
@@ -81,6 +83,31 @@ class PartialTranscriptRepository:
     async def list_shared_member_ids(self, meeting_id: UUID) -> list[UUID]:
         return []
 
+    async def list_transcript_speakers(
+        self, transcript_id: UUID | None
+    ) -> list[dict[str, Any]]:
+        if transcript_id != TRANSCRIPT_ID:
+            return []
+        return [
+            {
+                "id": str(SPEAKER_ID),
+                "speaker_key": "chunk-0:A",
+                "provider_label": "A",
+                "display_name": "화자 1",
+            }
+        ]
+
+    async def list_transcript_segments(
+        self, transcript_id: UUID | None
+    ) -> list[dict[str, Any]]:
+        return []
+
+    async def update_transcript_speaker(
+        self, speaker_id: UUID, display_name: str
+    ) -> None:
+        assert speaker_id == SPEAKER_ID
+        assert display_name == "김민지"
+
 
 @pytest.mark.asyncio
 async def test_transcript_retry_reuses_partial_row_and_preserves_original() -> None:
@@ -95,3 +122,24 @@ async def test_transcript_retry_reuses_partial_row_and_preserves_original() -> N
     assert result.transcript_original == "Original text"
     assert result.transcript_edited == "Edited after retry"
     assert repository.meeting["current_transcript_id"] == str(TRANSCRIPT_ID)
+
+
+@pytest.mark.asyncio
+async def test_speaker_rename_updates_only_edited_transcript() -> None:
+    repository = PartialTranscriptRepository()
+    repository.meeting["current_transcript_id"] = str(TRANSCRIPT_ID)
+    repository.transcript["original_text"] = "[00:00:01] 화자 1: 원본 발언"
+    repository.transcript["edited_text"] = "[00:00:01] 화자 1: 수정한 발언"
+    service = MeetingService(
+        repository,  # type: ignore[arg-type]
+        AuthenticatedUser(id=USER_ID, email="owner@example.invalid", access_token="test"),
+    )
+
+    await service.update_transcript_speaker(
+        MEETING_ID,
+        SPEAKER_ID,
+        TranscriptSpeakerUpdate(display_name="김민지"),
+    )
+
+    assert repository.transcript["original_text"] == "[00:00:01] 화자 1: 원본 발언"
+    assert repository.transcript["edited_text"] == "[00:00:01] 김민지: 수정한 발언"

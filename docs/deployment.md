@@ -12,6 +12,7 @@
 - `202611110002_ai_worker_grants.sql`
 - `202611120001_file_ingestion.sql`
 - `202611120002_large_audio_chunking.sql` (대용량 음성 기능 배포 전에 별도 적용)
+- `202611120003_diarized_transcripts.sql` (화자 분리 전사 기능 배포 전에 별도 적용)
 
 `meeting-files` Storage bucket은 반드시 private이어야 한다. 공개 버킷으로 전환하지 않는다.
 
@@ -70,7 +71,7 @@ OPENROUTER_ANALYSIS_MODEL=deepseek/deepseek-v3.2
 AI_MODE=real
 
 OPENAI_API_KEY=<secret>
-OPENAI_STT_MODEL=gpt-transcribe
+OPENAI_STT_MODEL=gpt-4o-transcribe-diarize
 STT_MODE=real
 ```
 

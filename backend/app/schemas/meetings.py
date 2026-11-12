@@ -28,6 +28,25 @@ class TranscriptUpsert(BaseModel):
     text: str = Field(min_length=1, max_length=500_000)
 
 
+class TranscriptSpeakerUpdate(BaseModel):
+    display_name: str = Field(min_length=1, max_length=100)
+
+
+class TranscriptSpeakerResponse(BaseModel):
+    id: UUID
+    provider_label: str
+    display_name: str
+
+
+class TranscriptSegmentResponse(BaseModel):
+    id: UUID
+    speaker_id: UUID
+    speaker_name: str
+    start_seconds: float
+    end_seconds: float
+    text: str
+
+
 class EditableDiscussionItem(BaseModel):
     id: str = Field(min_length=1, max_length=100)
     text: str = Field(min_length=1, max_length=2000)
@@ -77,6 +96,8 @@ class MeetingResponse(BaseModel):
     summary: str = ""
     transcript_original: str = ""
     transcript_edited: str = ""
+    transcript_speakers: list[TranscriptSpeakerResponse] = Field(default_factory=list)
+    transcript_segments: list[TranscriptSegmentResponse] = Field(default_factory=list)
     key_discussions: list[DiscussionItem] = Field(default_factory=list)
     decisions: list[DiscussionItem] = Field(default_factory=list)
     follow_ups: list[DiscussionItem] = Field(default_factory=list)

@@ -2,7 +2,7 @@ import asyncio
 
 import httpx
 
-from app.ai.stt.base import STTProviderError, TranscriptResult
+from app.ai.stt.base import STTProviderError, TranscriptResult, TranscriptSegment
 from app.core.settings import Settings
 
 
@@ -13,6 +13,7 @@ class OpenAISTTProvider:
         self.base_url = settings.openai_base_url.rstrip("/")
         self.timeout = settings.openai_timeout_seconds
         self.max_retries = settings.openai_max_retries
+        self.diarization = self.model == "gpt-4o-transcribe-diarize"
 
     async def transcribe(
         self, content: bytes, *, filename: str, content_type: str
@@ -26,10 +27,18 @@ class OpenAISTTProvider:
         for attempt in range(self.max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    data = {"model": self.model, "language": "ko"}
+                    if self.diarization:
+                        data.update(
+                            {
+                                "response_format": "diarized_json",
+                                "chunking_strategy": "auto",
+                            }
+                        )
                     response = await client.post(
                         f"{self.base_url}/audio/transcriptions",
                         headers={"Authorization": f"Bearer {self.api_key}"},
-                        data={"model": self.model, "language": "ko"},
+                        data=data,
                         files={"file": (filename, content, content_type)},
                     )
             except httpx.TimeoutException as exc:
@@ -72,6 +81,7 @@ class OpenAISTTProvider:
             try:
                 payload = response.json()
                 text = payload.get("text") if isinstance(payload, dict) else None
+                segments = self._parse_segments(payload) if self.diarization else ()
             except ValueError as exc:
                 raise STTProviderError(
                     "STT_RESPONSE_INVALID",
@@ -91,5 +101,59 @@ class OpenAISTTProvider:
                 language="ko",
                 request_id=response.headers.get("x-request-id"),
                 usage=payload.get("usage") if isinstance(payload.get("usage"), dict) else {},
+                segments=segments,
             )
         raise STTProviderError("STT_INTERNAL_ERROR", "음성을 처리하지 못했습니다.", retryable=True)
+
+    @staticmethod
+    def _parse_segments(payload: object) -> tuple[TranscriptSegment, ...]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("segments"), list):
+            raise STTProviderError(
+                "STT_RESPONSE_INVALID",
+                "화자별 전사 결과를 확인하지 못했습니다.",
+                retryable=True,
+            )
+        parsed: list[TranscriptSegment] = []
+        for raw in payload["segments"]:
+            if not isinstance(raw, dict):
+                raise STTProviderError(
+                    "STT_RESPONSE_INVALID",
+                    "화자별 전사 결과를 확인하지 못했습니다.",
+                    retryable=True,
+                )
+            speaker = raw.get("speaker")
+            text = raw.get("text")
+            start = raw.get("start")
+            end = raw.get("end")
+            if (
+                not isinstance(text, str)
+                or not text.strip()
+                or not isinstance(start, (int, float))
+                or not isinstance(end, (int, float))
+                or start < 0
+                or end <= start
+            ):
+                raise STTProviderError(
+                    "STT_RESPONSE_INVALID",
+                    "화자별 전사 결과를 확인하지 못했습니다.",
+                    retryable=True,
+                )
+            parsed.append(
+                TranscriptSegment(
+                    speaker=(
+                        speaker.strip()
+                        if isinstance(speaker, str) and speaker.strip()
+                        else "unknown"
+                    ),
+                    start=float(start),
+                    end=float(end),
+                    text=text.strip(),
+                )
+            )
+        if not parsed:
+            raise STTProviderError(
+                "STT_EMPTY",
+                "음성에서 회의 내용을 찾지 못했습니다.",
+                retryable=False,
+            )
+        return tuple(parsed)

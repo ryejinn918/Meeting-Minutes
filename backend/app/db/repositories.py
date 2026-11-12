@@ -295,6 +295,97 @@ class MeetFlowRepository:
         )
         return rows[0]
 
+    async def create_transcript_diarization(
+        self,
+        *,
+        meeting_id: UUID,
+        transcript_id: UUID,
+        speakers: list[dict[str, str]],
+        segments: list[dict[str, object]],
+    ) -> None:
+        if not speakers or not segments:
+            return
+        speaker_ids = {item["speaker_key"]: uuid4() for item in speakers}
+        await self.client.request(
+            "POST",
+            "transcript_speakers",
+            json=[
+                {
+                    "id": str(speaker_ids[item["speaker_key"]]),
+                    "transcript_id": str(transcript_id),
+                    "meeting_id": str(meeting_id),
+                    "speaker_key": item["speaker_key"],
+                    "provider_label": item["provider_label"],
+                    "display_name": item["display_name"],
+                }
+                for item in speakers
+            ],
+            prefer="return=minimal",
+        )
+        await self.client.request(
+            "POST",
+            "transcript_segments",
+            json=[
+                {
+                    "id": str(uuid4()),
+                    "transcript_id": str(transcript_id),
+                    "meeting_id": str(meeting_id),
+                    "speaker_id": str(speaker_ids[str(item["speaker_key"])]),
+                    "segment_index": index,
+                    "start_seconds": item["start"],
+                    "end_seconds": item["end"],
+                    "original_text": item["text"],
+                }
+                for index, item in enumerate(segments)
+            ],
+            prefer="return=minimal",
+        )
+
+    async def list_transcript_speakers(
+        self, transcript_id: UUID | None
+    ) -> list[dict[str, Any]]:
+        if transcript_id is None:
+            return []
+        rows, _ = await self.client.request(
+            "GET",
+            "transcript_speakers",
+            params={
+                "select": "id,speaker_key,provider_label,display_name",
+                "transcript_id": f"eq.{transcript_id}",
+                "order": "created_at.asc",
+            },
+        )
+        return rows
+
+    async def list_transcript_segments(
+        self, transcript_id: UUID | None
+    ) -> list[dict[str, Any]]:
+        if transcript_id is None:
+            return []
+        rows, _ = await self.client.request(
+            "GET",
+            "transcript_segments",
+            params={
+                "select": (
+                    "id,speaker_id,segment_index,start_seconds,end_seconds,original_text"
+                ),
+                "transcript_id": f"eq.{transcript_id}",
+                "order": "segment_index.asc",
+            },
+        )
+        return rows
+
+    async def update_transcript_speaker(
+        self, speaker_id: UUID, display_name: str
+    ) -> None:
+        await self.client.request(
+            "PATCH",
+            "transcript_speakers",
+            params={"id": f"eq.{speaker_id}"},
+            json={"display_name": display_name},
+            prefer="return=minimal",
+        )
+
     async def get_notes(self, notes_id: UUID | None) -> dict[str, Any] | None:
         if notes_id is None:
             return None

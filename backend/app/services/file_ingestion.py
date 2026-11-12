@@ -6,7 +6,12 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.ai.stt.base import STTProvider, STTProviderError, TranscriptResult
+from app.ai.stt.base import (
+    STTProvider,
+    STTProviderError,
+    TranscriptResult,
+    TranscriptSegment,
+)
 from app.core.errors import AppError
 from app.core.security import AuthenticatedUser
 from app.core.settings import Settings
@@ -24,6 +29,14 @@ from app.services.audio_processing import (
     split_audio_file,
 )
 from app.services.authorization import AuthorizationService
+from app.services.diarization import (
+    deserialize_segments,
+    format_diarized_transcript,
+    merge_diarized_segments,
+    offset_segments,
+    serialize_segments,
+    speaker_labels,
+)
 from app.services.file_content import (
     extract_document_text,
     validate_file_path,
@@ -318,6 +331,28 @@ class FileIngestionService:
                 stt_provider=provider,
                 stt_model=model,
             )
+            if job["job_type"] == "transcribe" and result.segments:
+                await self.admin_repository.create_transcript_diarization(
+                    meeting_id=meeting_id,
+                    transcript_id=UUID(transcript["id"]),
+                    speakers=[
+                        {
+                            "speaker_key": key,
+                            "provider_label": result.provider_speakers[key],
+                            "display_name": label,
+                        }
+                        for key, label in result.speaker_labels.items()
+                    ],
+                    segments=[
+                        {
+                            "speaker_key": segment.speaker,
+                            "start": segment.start,
+                            "end": segment.end,
+                            "text": segment.text,
+                        }
+                        for segment in result.segments
+                    ],
+                )
             latest = await self.admin_repository.get_meeting(meeting_id)
             if latest is None:
                 raise AppError(404, "MEETING_NOT_FOUND", "회의록을 찾을 수 없습니다.")
@@ -441,6 +476,7 @@ class FileIngestionService:
                 filename=file["original_name"],
                 content_type=file["mime_type"],
             )
+            result = self._with_diarization(result, chunk_index=0, offset_seconds=0)
             usage = {
                 "chunk_count": 1,
                 "processed_audio_bytes": len(content),
@@ -460,6 +496,7 @@ class FileIngestionService:
         cached_rows = await self.admin_job_repository.list_job_chunks(job_id)
         cached = {int(row["chunk_index"]): row for row in cached_rows}
         texts: list[str] = []
+        segment_chunks = []
         provider_usage: list[dict[str, Any]] = []
         processed_bytes = 0
         provider = "openai"
@@ -469,6 +506,7 @@ class FileIngestionService:
             previous = cached.get(chunk.index)
             if previous and previous.get("chunk_sha256") == chunk_hash:
                 texts.append(str(previous["transcript_text"]))
+                segment_chunks.append(deserialize_segments(previous.get("segments")))
                 provider_usage.append(
                     previous["usage"] if isinstance(previous.get("usage"), dict) else {}
                 )
@@ -482,6 +520,11 @@ class FileIngestionService:
                 filename=chunk.path.name,
                 content_type="audio/mpeg",
             )
+            chunk_segments = offset_segments(
+                result.segments,
+                chunk_index=chunk.index,
+                offset_seconds=chunk.start_seconds,
+            )
             chunk_usage = dict(result.usage)
             if result.request_id:
                 chunk_usage["request_id"] = result.request_id
@@ -492,16 +535,24 @@ class FileIngestionService:
                 start_seconds=chunk.start_seconds,
                 end_seconds=chunk.end_seconds,
                 transcript_text=result.text,
+                segments=serialize_segments(chunk_segments),
                 provider=result.provider,
                 model=result.model,
                 usage=chunk_usage,
             )
             texts.append(result.text)
+            segment_chunks.append(chunk_segments)
             provider_usage.append(chunk_usage)
             provider = result.provider
             model = result.model
             processed_bytes += len(content)
-        merged = merge_transcript_chunks(texts)
+        diarized = merge_diarized_segments(segment_chunks)
+        labels = speaker_labels(diarized)
+        merged = (
+            format_diarized_transcript(diarized, labels)
+            if diarized
+            else merge_transcript_chunks(texts)
+        )
         if not merged:
             raise STTProviderError(
                 "STT_EMPTY",
@@ -515,12 +566,59 @@ class FileIngestionService:
                 model=model,
                 language="ko",
                 usage={"chunks": provider_usage},
+                segments=tuple(
+                    TranscriptSegment(
+                        speaker=item.speaker_key,
+                        start=item.start,
+                        end=item.end,
+                        text=item.text,
+                    )
+                    for item in diarized
+                ),
+                speaker_labels=labels,
+                provider_speakers={
+                    item.speaker_key: item.provider_speaker for item in diarized
+                },
             ),
             {
                 "chunk_count": len(split.chunks),
                 "processed_audio_bytes": processed_bytes,
                 "audio_duration_seconds": round(split.duration_seconds, 3),
                 "provider_usage": provider_usage,
+            },
+        )
+
+    @staticmethod
+    def _with_diarization(
+        result: TranscriptResult, *, chunk_index: int, offset_seconds: float
+    ) -> TranscriptResult:
+        diarized = offset_segments(
+            result.segments,
+            chunk_index=chunk_index,
+            offset_seconds=offset_seconds,
+        )
+        if not diarized:
+            return result
+        labels = speaker_labels(diarized)
+        return TranscriptResult(
+            text=format_diarized_transcript(diarized, labels),
+            provider=result.provider,
+            model=result.model,
+            language=result.language,
+            request_id=result.request_id,
+            usage=result.usage,
+            segments=tuple(
+                TranscriptSegment(
+                    speaker=item.speaker_key,
+                    start=item.start,
+                    end=item.end,
+                    text=item.text,
+                )
+                for item in diarized
+            ),
+            speaker_labels=labels,
+            provider_speakers={
+                item.speaker_key: item.provider_speaker for item in diarized
             },
         )
 

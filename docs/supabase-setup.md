@@ -19,6 +19,7 @@ Migration은 파일명 순서대로 적용한다.
 2. `supabase/migrations/202611110002_ai_worker_grants.sql`
 3. `supabase/migrations/202611120001_file_ingestion.sql`
 4. `supabase/migrations/202611120002_large_audio_chunking.sql`
+5. `supabase/migrations/202611120003_diarized_transcripts.sql`
 
 Supabase CLI는 저장소 루트의 개발 의존성으로 고정되어 있으므로 `npx supabase`로 실행한다. 적용 전 Dashboard의 Project Ref가 `backend/.env`의 `SUPABASE_URL` host와 일치하는지 확인한다.
 

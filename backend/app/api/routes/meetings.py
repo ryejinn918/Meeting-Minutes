@@ -10,6 +10,7 @@ from app.schemas.meetings import (
     MeetingNotesUpdate,
     MeetingResponse,
     MeetingUpdate,
+    TranscriptSpeakerUpdate,
     TranscriptUpsert,
 )
 from app.services.meetings import MeetingService
@@ -67,6 +68,19 @@ async def save_transcript(
     service: MeetingService = Depends(get_service),
 ) -> MeetingResponse:
     return await service.save_transcript(meeting_id, payload.text)
+
+
+@router.patch(
+    "/{meeting_id}/transcript/speakers/{speaker_id}",
+    response_model=MeetingResponse,
+)
+async def update_transcript_speaker(
+    meeting_id: UUID,
+    speaker_id: UUID,
+    payload: TranscriptSpeakerUpdate,
+    service: MeetingService = Depends(get_service),
+) -> MeetingResponse:
+    return await service.update_transcript_speaker(meeting_id, speaker_id, payload)
 
 
 @router.patch("/{meeting_id}/notes", response_model=MeetingResponse)

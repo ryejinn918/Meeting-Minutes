@@ -82,7 +82,7 @@ class AIRepository:
             params={
                 "select": (
                     "chunk_index,chunk_sha256,start_seconds,end_seconds,"
-                    "transcript_text,provider,model,usage"
+                    "transcript_text,segments,provider,model,usage"
                 ),
                 "job_id": f"eq.{job_id}",
                 "order": "chunk_index.asc",
@@ -99,6 +99,7 @@ class AIRepository:
         start_seconds: float,
         end_seconds: float,
         transcript_text: str,
+        segments: list[dict[str, object]],
         provider: str,
         model: str,
         usage: dict[str, Any],
@@ -114,6 +115,7 @@ class AIRepository:
                 "start_seconds": start_seconds,
                 "end_seconds": end_seconds,
                 "transcript_text": transcript_text,
+                "segments": segments,
                 "provider": provider,
                 "model": model,
                 "usage": usage,

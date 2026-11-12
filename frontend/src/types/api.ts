@@ -64,6 +64,8 @@ export interface Meeting {
   summary: string;
   transcript_original: string;
   transcript_edited: string;
+  transcript_speakers: TranscriptSpeaker[];
+  transcript_segments: TranscriptSegment[];
   key_discussions: DiscussionItem[];
   decisions: DiscussionItem[];
   follow_ups: DiscussionItem[];
@@ -71,6 +73,21 @@ export interface Meeting {
   shared_member_ids: string[];
   ai_generated_at: string | null;
   version: number;
+}
+
+export interface TranscriptSpeaker {
+  id: string;
+  provider_label: string;
+  display_name: string;
+}
+
+export interface TranscriptSegment {
+  id: string;
+  speaker_id: string;
+  speaker_name: string;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
 }
 
 export interface ProcessingJob {

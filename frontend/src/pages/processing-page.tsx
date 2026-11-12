@@ -23,6 +23,9 @@ export function ProcessingPage() {
       const status = query.state.data?.status;
       return status === "queued" || status === "processing" ? 1500 : false;
     },
+    refetchIntervalInBackground: true,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const retry = useMutation({
     mutationFn: () => apiService.retryJob(jobId),
@@ -31,9 +34,18 @@ export function ProcessingPage() {
 
   useEffect(() => {
     if (jobQuery.data?.status !== "succeeded") return;
-    void queryClient.invalidateQueries({ queryKey: queryKeys.meeting(id) });
     const tab = jobQuery.data.job_type === "analyze" ? "summary" : "transcript";
-    navigate(`/meetings/${id}?tab=${tab}`, { replace: true });
+    let cancelled = false;
+    void queryClient
+      .invalidateQueries({ queryKey: queryKeys.meeting(id) })
+      .finally(() => {
+        if (!cancelled) {
+          navigate(`/meetings/${id}?tab=${tab}`, { replace: true });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id, jobQuery.data, navigate, queryClient]);
 
   if (!jobId) {

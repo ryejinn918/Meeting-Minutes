@@ -39,11 +39,13 @@ def reset_stub(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     yield
 
 
-def settings(*, retries: int = 0) -> Settings:
+def settings(
+    *, retries: int = 0, model: str = "gpt-transcribe"
+) -> Settings:
     return Settings(
         _env_file=None,
         openai_api_key="test-secret",
-        openai_stt_model="gpt-transcribe",
+        openai_stt_model=model,
         openai_max_retries=retries,
     )
 
@@ -61,6 +63,49 @@ async def test_openai_stt_parses_text_without_guessing_speakers() -> None:
     request = StubClient.requests[0]
     assert request["data"] == {"model": "gpt-transcribe", "language": "ko"}
     assert "speaker" not in request["data"]
+
+
+@pytest.mark.asyncio
+async def test_diarization_model_requests_and_parses_diarized_json() -> None:
+    StubClient.queue = [
+        httpx.Response(
+            200,
+            json={
+                "text": "첫 번째 발언 두 번째 발언",
+                "segments": [
+                    {
+                        "speaker": "A",
+                        "start": 0.0,
+                        "end": 4.2,
+                        "text": "첫 번째 발언",
+                    },
+                    {
+                        "speaker": "B",
+                        "start": 4.2,
+                        "end": 8.0,
+                        "text": "두 번째 발언",
+                    },
+                ],
+                "usage": {"type": "duration", "seconds": 8},
+            },
+        )
+    ]
+
+    result = await OpenAISTTProvider(
+        settings(model="gpt-4o-transcribe-diarize")
+    ).transcribe(b"ID3audio", filename="meeting.mp3", content_type="audio/mpeg")
+
+    request = StubClient.requests[0]
+    assert request["data"] == {
+        "model": "gpt-4o-transcribe-diarize",
+        "language": "ko",
+        "response_format": "diarized_json",
+        "chunking_strategy": "auto",
+    }
+    assert [(item.speaker, item.start, item.end) for item in result.segments] == [
+        ("A", 0.0, 4.2),
+        ("B", 4.2, 8.0),
+    ]
 
 
 @pytest.mark.asyncio

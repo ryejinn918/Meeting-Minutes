@@ -3,6 +3,14 @@ from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
+class TranscriptSegment:
+    speaker: str
+    start: float
+    end: float
+    text: str
+
+
+@dataclass(frozen=True)
 class TranscriptResult:
     text: str
     provider: str
@@ -10,6 +18,9 @@ class TranscriptResult:
     language: str | None = None
     request_id: str | None = None
     usage: dict[str, Any] = field(default_factory=dict)
+    segments: tuple[TranscriptSegment, ...] = ()
+    speaker_labels: dict[str, str] = field(default_factory=dict)
+    provider_speakers: dict[str, str] = field(default_factory=dict)
 
 
 class STTProviderError(Exception):

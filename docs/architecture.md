@@ -148,12 +148,14 @@ Render Free 배포에서도 프로세스 내부 `BackgroundTasks`는 서버 재�
 | `meetings` | `id`, `team_id`, `title`, `meeting_at`, `source_type`, `created_by`, `processing_status`, `current_transcript_id`, `current_notes_id`, `version` | status=`draft/uploaded/transcribing/analyzing/ready/failed`; optimistic lock용 `version` |
 | `meeting_files` | `id`, `meeting_id`, `storage_bucket`, `storage_path`, `original_name`, `mime_type`, `size_bytes`, `sha256`, `uploaded_by` | Storage 경로는 서버 생성. 한 회의에 원본 여러 개 허용 가능하되 MVP UI는 1개 |
 | `meeting_transcripts` | `id`, `meeting_id`, `source`, `original_text`, `edited_text`, `language`, `stt_provider`, `stt_model`, `created_by` | AI/STT 원문은 `original_text`에 불변 보존, 사용자 수정은 `edited_text` |
+| `transcript_speakers` | `id`, `transcript_id`, `meeting_id`, `speaker_key`, `provider_label`, `display_name` | 조각 범위의 provider 화자 ID와 사용자가 수정 가능한 표시명을 분리. 서로 다른 조각의 화자를 자동 병합하지 않음 |
+| `transcript_segments` | `id`, `transcript_id`, `meeting_id`, `speaker_id`, `segment_index`, `start_seconds`, `end_seconds`, `original_text` | provider가 반환한 발화 순서·시작/종료 시각·원문을 불변 저장 |
 | `meeting_ai_runs` | `id`, `meeting_id`, `transcript_id`, `provider`, `model`, `prompt_version`, `schema_version`, `validated_output jsonb`, `usage jsonb`, `error_code`, `completed_at` | AI가 만든 검증 결과와 메타데이터의 이력. 사용자 편집으로 덮어쓰지 않음 |
 | `meeting_notes` | `id`, `meeting_id`, `derived_from_run_id`, `summary`, `key_discussions jsonb`, `decisions jsonb`, `follow_ups jsonb`, `updated_by` | 현재 사용자 편집본. 배열 원소는 `{id,text,evidence?}` 형태 |
 | `action_items` | `id`, `meeting_id`, `source_run_id`, `description`, `assignee_id`, `assignee_text`, `due_date`, `status`, `evidence`, `sort_order`, `updated_by` | status=`todo/in_progress/done`; 불명확한 담당자/기한은 null. 팀원과 매칭 실패 시 `assignee_text`만 보존 |
 | `meeting_shares` | `meeting_id`, `user_id`, `shared_by`, `can_edit` | PK `(meeting_id,user_id)`. MVP는 `can_edit=false` 고정 권장; 생성자와 팀 owner/admin은 별도 권한 |
 | `processing_jobs` | `id`, `meeting_id`, `job_type`, `status`, `attempt_count`, `error_code`, `error_message_safe`, `started_at`, `finished_at` | job type=`extract/transcribe/analyze`; status=`queued/processing/succeeded/failed` |
-| `processing_job_chunks` | `job_id`, `chunk_index`, `chunk_sha256`, `start_seconds`, `end_seconds`, `transcript_text`, `usage jsonb` | 대용량 STT 구간 checkpoint. authenticated 직접 접근 권한 없이 서버 worker만 사용 |
+| `processing_job_chunks` | `job_id`, `chunk_index`, `chunk_sha256`, `start_seconds`, `end_seconds`, `transcript_text`, `segments jsonb`, `usage jsonb` | 대용량 STT 구간 checkpoint. authenticated 직접 접근 권한 없이 서버 worker만 사용 |
 
 `meeting_notes`의 JSON 배열에는 단순한 구조화 목록만 두고, 상태·담당자·기한을 갱신하는 액션아이템은 행 단위 권한/갱신이 필요한 별도 테이블로 둔다. `meeting_ai_runs.validated_output`은 감사 및 재생성 비교용 원본이고, `meeting_notes`와 `action_items`가 편집 가능한 현재 상태다.
 
@@ -197,7 +199,7 @@ FastAPI가 secret/service-role key를 사용할 때 RLS가 우회된다는 점�
 3. **전문 생성**:
    - 직접 입력/TXT: UTF-8 디코딩, BOM·개행 정규화
    - PDF: 텍스트 기반 PDF만 추출. 스캔 OCR은 MVP 제외이며 명확한 오류 제공
-   - 음성: OpenAI adapter 호출. 2026-11-12 공식 문서의 파일 전사 권장 ID인 `gpt-transcribe`를 사용한다. 화자 라벨과 word timestamp 예시는 종료 예정 모델에만 있으므로 이번 단계에서는 저장하거나 추측하지 않는다.
+   - 음성: OpenAI adapter가 `gpt-4o-transcribe-diarize`, `response_format=diarized_json`, `chunking_strategy=auto`로 호출한다. 반환된 발화의 speaker/start/end/text만 저장하며 실제 인물과 자동 연결하지 않는다. 이 모델은 2027-02-26 지원 종료 예정이므로 adapter와 환경변수 교체 지점을 유지한다.
 4. **분석**: transcript만 OpenRouter adapter에 전달한다. 2026-11-11 카탈로그 확인 기준 `deepseek/deepseek-v3.2`는 structured outputs(`response_format`)을 지원하며 이를 배포 환경의 `OPENROUTER_ANALYSIS_MODEL`에 pin한다. 모델 ID는 코드에 고정하지 않고 환경변수로 유지하며 배포 전 가용성·가격·context limit을 다시 확인한다.
 5. **검증**: provider의 JSON schema/structured output을 사용하더라도 최종 경계는 Pydantic 모델이다. 실패 시 schema 오류를 포함한 짧은 repair prompt로 1회, 일시 오류에 1회까지만 재시도한다.
 6. **저장**: 검증된 AI 출력은 `meeting_ai_runs`에 불변 저장하고, 별도 transaction으로 `meeting_notes`/`action_items` 편집본을 만든다.
@@ -363,7 +365,7 @@ system prompt에는 다음을 고정한다: 원문 외 사실 금지, 제안/추
 ### OpenAI / OpenRouter
 
 - 각 API key 생성, 예산/사용 한도와 결제 알림 설정
-- `OPENAI_STT_MODEL=gpt-transcribe`를 배포 시 공식 문서에서 재검증
+- `OPENAI_STT_MODEL=gpt-4o-transcribe-diarize`를 설정하고 2027-02-26 이전 교체 계획 수립
 - OpenRouter에서 사용 가능한 DeepSeek 모델의 정확한 ID, structured output, context, 가격, 데이터 보존 정책을 확인해 `OPENROUTER_ANALYSIS_MODEL`에 pin
 - OpenRouter app attribution header는 선택적으로 설정하고 provider fallback은 MVP에서 끈다(재현성과 데이터 처리 위치 통제)
 
@@ -391,7 +393,7 @@ SUPABASE_SECRET_KEY=
 SUPABASE_JWT_AUDIENCE=authenticated
 SUPABASE_STORAGE_BUCKET=meeting-files
 OPENAI_API_KEY=
-OPENAI_STT_MODEL=gpt-transcribe
+OPENAI_STT_MODEL=gpt-4o-transcribe-diarize
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_TIMEOUT_SECONDS=90
 OPENAI_MAX_RETRIES=1
