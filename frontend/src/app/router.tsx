@@ -7,6 +7,7 @@ import { MeetingDetailPage } from "@/pages/meeting-detail-page";
 import { MeetingNewPage } from "@/pages/meeting-new-page";
 import { MeetingsPage } from "@/pages/meetings-page";
 import { NotFoundPage } from "@/pages/not-found-page";
+import { OrganizationsPage } from "@/pages/organizations-page";
 import { ProcessingPage } from "@/pages/processing-page";
 import { SharePage } from "@/pages/share-page";
 import { SignupPage } from "@/pages/signup-page";
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
     children: [
       { path: "/teams", element: <TeamsPage /> },
       { path: "/teams/new", element: <TeamNewPage /> },
+      { path: "/organizations", element: <OrganizationsPage /> },
       {
         element: <AppLayout />,
         children: [

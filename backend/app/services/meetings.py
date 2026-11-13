@@ -1,5 +1,4 @@
 import asyncio
-from datetime import UTC, datetime
 from uuid import UUID
 
 from app.core.errors import AppError
@@ -82,9 +81,26 @@ class MeetingService:
     async def delete(self, meeting_id: UUID) -> None:
         meeting = await self._get_visible(meeting_id)
         await self.authorization.require_meeting_manager(meeting)
-        await self.repository.soft_delete_meeting(
-            meeting_id, meeting["version"], datetime.now(UTC).isoformat()
-        )
+        result = await self.repository.soft_delete_meeting(meeting_id, meeting["version"])
+        if result == "deleted":
+            return
+        if result == "active_job":
+            raise AppError(
+                409,
+                "MEETING_PROCESSING_ACTIVE",
+                "진행 중인 작업이 끝난 뒤 회의록을 삭제해 주세요.",
+            )
+        if result == "version_conflict":
+            raise AppError(
+                409,
+                "MEETING_VERSION_CONFLICT",
+                "다른 변경사항이 있어 회의록을 다시 불러와야 합니다.",
+            )
+        if result == "forbidden":
+            raise AppError(
+                403, "MEETING_DELETE_DENIED", "이 회의록을 삭제할 권한이 없습니다."
+            )
+        raise AppError(404, "MEETING_NOT_FOUND", "회의록을 찾을 수 없습니다.")
 
     async def save_transcript(self, meeting_id: UUID, text: str) -> MeetingResponse:
         meeting = await self._get_visible(meeting_id)

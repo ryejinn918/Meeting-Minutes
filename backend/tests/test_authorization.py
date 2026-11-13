@@ -53,3 +53,23 @@ async def test_read_only_member_cannot_edit_another_users_meeting() -> None:
         await authorization.require_meeting_manager(meeting)
 
     assert error.value.code == "MEETING_EDIT_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_non_organization_member_is_denied() -> None:
+    repository = MembershipRepository(None)
+    authorization = AuthorizationService(
+        repository,  # type: ignore[arg-type]
+        AuthenticatedUser(id=USER_ID, email=None, access_token="token"),
+    )
+
+    async def get_organization_membership(
+        organization_id: UUID, user_id: UUID
+    ) -> None:
+        return None
+
+    repository.get_organization_membership = get_organization_membership  # type: ignore[attr-defined,method-assign]
+    with pytest.raises(AppError) as error:
+        await authorization.require_organization_member(TEAM_ID)
+
+    assert error.value.code == "ORGANIZATION_ACCESS_DENIED"

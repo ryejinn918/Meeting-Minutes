@@ -26,7 +26,7 @@ export const mockService = {
 
   async createTeam(name: string): Promise<Team> {
     await wait();
-    const team: Team = { id: `team-${Date.now()}`, name, description: "새로 만든 Mock 팀", member_count: 1, my_role: "owner" };
+    const team: Team = { id: `team-${Date.now()}`, name, description: "새로 만든 Mock 팀", member_count: 1, my_role: "owner", organization: null, department: null };
     teams = [team, ...teams];
     return structuredClone(team);
   },

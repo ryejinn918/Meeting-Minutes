@@ -454,3 +454,29 @@ SIGNED_URL_TTL_SECONDS=300
 3. 공유받은 멤버를 read-only로 할지 `can_edit`를 노출할지 결정한다. 2일 MVP 권장은 read-only다.
 4. PDF export 라이브러리와 한글 폰트 라이선스를 확정한다.
 5. 실제 대표 파일(한국어 회의, 잡음 음성, 표가 있는 PDF)로 크기·시간·비용 상한을 측정한다.
+
+## 11. Phase A 조직 계층 및 삭제 정책
+
+조직 계층은 `organizations → departments → teams → team_members`로 확장한다. 조직과 부문에는 각각 최소 역할 멤버십을 두며, 실제 회의 접근은 계속 팀 멤버십·작성자·공유 관계를 기준으로 판정한다. 조직 또는 부문 역할만으로 하위 팀의 모든 회의록을 자동 열람할 수 없다.
+
+### 11.1 기존 데이터 호환 및 백필 정책
+
+- 기존 `teams.organization_id`와 `teams.department_id`는 모두 `NULL`인 legacy unscoped 팀으로 유지한다.
+- Migration은 기존 팀이나 회의록을 임의 조직에 자동 배정하지 않는다.
+- 기존 팀 멤버십, 회의록 FK, Storage 경로와 RLS 의미는 그대로 유지한다.
+- 새 scoped 팀은 조직과 부문을 함께 지정해야 하며, 두 ID의 소속 관계를 복합 FK로 검증한다.
+- 실제 기존 팀을 조직에 연결하는 백필은 조직 관리자 확인, 팀별 대상 매핑표, 백업 및 별도 승인 Migration이 준비된 뒤 수행한다.
+
+### 11.2 역할과 접근 경계
+
+- 조직 관리자(`org_admin`): 조직·부문 생성 및 scoped 팀 생성
+- 부문 관리자(`department_admin`): 자신의 부문에 scoped 팀 생성
+- 팀 owner/admin/member: 기존 팀 및 회의 권한 유지
+- 조직/부문 구성원 여부는 관리 화면 접근과 생성 권한에 사용하며 회의 조회 권한을 대신하지 않는다.
+- 조직·부문·멤버십 테이블은 RLS를 사용하고, helper 함수는 `private` schema와 고정 `search_path`를 유지한다.
+
+### 11.3 회의록 삭제
+
+삭제는 물리 삭제가 아닌 `meetings.deleted_at` 소프트 삭제다. `public.soft_delete_meeting()` RPC가 사용자 JWT/RLS 아래에서 현재 version과 활성 `processing_jobs`를 한 transaction 안에서 확인한다. 활성 작업이 있으면 `409 MEETING_PROCESSING_ACTIVE`, version이 바뀌면 `409 MEETING_VERSION_CONFLICT`를 반환한다. 작성자 또는 팀 owner/admin만 삭제할 수 있고 공유받은 사용자는 거부된다.
+
+소프트 삭제 시 transcript, notes, AI run, action item, 원본 Storage object는 즉시 삭제하지 않는다. 조회 권한은 기존 `deleted_at is null` 조건으로 즉시 닫히며, 물리 삭제는 향후 조직별 보존 기간·감사·복구 정책이 확정된 뒤 별도 관리 작업으로 수행한다.

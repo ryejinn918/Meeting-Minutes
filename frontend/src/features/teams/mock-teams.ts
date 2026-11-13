@@ -14,6 +14,8 @@ export const mockTeams: Team[] = [
     description: "더 나은 업무 경험을 만드는 제품 팀",
     member_count: 4,
     my_role: "member",
+    organization: null,
+    department: null,
   },
   {
     id: "team-product-lab",
@@ -21,6 +23,8 @@ export const mockTeams: Team[] = [
     description: "신규 제품 아이디어를 검증하는 워킹 그룹",
     member_count: 7,
     my_role: "member",
+    organization: null,
+    department: null,
   },
 ];
 

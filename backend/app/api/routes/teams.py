@@ -22,7 +22,7 @@ def get_service(
 async def create_team(
     payload: TeamCreate, service: TeamService = Depends(get_service)
 ) -> TeamResponse:
-    return await service.create(payload.name)
+    return await service.create(payload)
 
 
 @router.get("", response_model=list[TeamResponse])

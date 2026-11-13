@@ -1,6 +1,8 @@
 export type ProcessingStatus = "draft" | "uploaded" | "transcribing" | "analyzing" | "ready" | "failed";
 export type ActionStatus = "todo" | "in_progress" | "done";
 export type TeamRole = "owner" | "admin" | "member";
+export type OrganizationRole = "org_admin" | "member";
+export type DepartmentRole = "department_admin" | "member";
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export interface ApiErrorEnvelope {
@@ -31,6 +33,34 @@ export interface Team {
   member_count: number;
   my_role: TeamRole;
   created_at?: string;
+  organization: TeamScope | null;
+  department: TeamScope | null;
+}
+
+export interface TeamScope {
+  id: string;
+  name: string;
+}
+
+export interface Department {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string;
+  my_role: DepartmentRole | null;
+  created_at: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  description: string;
+  my_role: OrganizationRole;
+  created_at: string;
+}
+
+export interface OrganizationDetail extends Organization {
+  departments: Department[];
 }
 
 export interface TeamDetail extends Team {

@@ -14,6 +14,160 @@ class MeetFlowRepository:
     def __init__(self, client: SupabaseRestClient) -> None:
         self.client = client
 
+    async def create_organization(
+        self, name: str, description: str, user_id: UUID
+    ) -> dict[str, Any]:
+        organization_id = uuid4()
+        await self.client.request(
+            "POST",
+            "organizations",
+            json={
+                "id": str(organization_id),
+                "name": name,
+                "description": description,
+                "created_by": str(user_id),
+            },
+            prefer="return=minimal",
+        )
+        organization = await self.get_organization(organization_id)
+        if organization is None:
+            raise AppError(
+                502,
+                "ORGANIZATION_CREATE_INCONSISTENT",
+                "조직 생성 결과를 확인할 수 없습니다.",
+            )
+        return organization
+
+    async def get_organization(
+        self, organization_id: UUID
+    ) -> dict[str, Any] | None:
+        rows, _ = await self.client.request(
+            "GET",
+            "organizations",
+            params={
+                "select": "id,name,description,created_at",
+                "id": f"eq.{organization_id}",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def list_organization_memberships(
+        self, user_id: UUID
+    ) -> list[dict[str, Any]]:
+        rows, _ = await self.client.request(
+            "GET",
+            "organization_members",
+            params={
+                "select": (
+                    "organization_id,role,status,"
+                    "organizations!inner(id,name,description,created_at)"
+                ),
+                "user_id": f"eq.{user_id}",
+                "status": "eq.active",
+                "order": "joined_at.asc",
+            },
+        )
+        return rows
+
+    async def get_organization_membership(
+        self, organization_id: UUID, user_id: UUID
+    ) -> dict[str, Any] | None:
+        rows, _ = await self.client.request(
+            "GET",
+            "organization_members",
+            params={
+                "select": "organization_id,user_id,role,status",
+                "organization_id": f"eq.{organization_id}",
+                "user_id": f"eq.{user_id}",
+                "status": "eq.active",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def create_department(
+        self,
+        organization_id: UUID,
+        name: str,
+        description: str,
+        user_id: UUID,
+    ) -> dict[str, Any]:
+        department_id = uuid4()
+        await self.client.request(
+            "POST",
+            "departments",
+            json={
+                "id": str(department_id),
+                "organization_id": str(organization_id),
+                "name": name,
+                "description": description,
+                "created_by": str(user_id),
+            },
+            prefer="return=minimal",
+        )
+        department = await self.get_department(department_id)
+        if department is None:
+            raise AppError(
+                502,
+                "DEPARTMENT_CREATE_INCONSISTENT",
+                "부문 생성 결과를 확인할 수 없습니다.",
+            )
+        return department
+
+    async def get_department(self, department_id: UUID) -> dict[str, Any] | None:
+        rows, _ = await self.client.request(
+            "GET",
+            "departments",
+            params={
+                "select": "id,organization_id,name,description,created_at",
+                "id": f"eq.{department_id}",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def list_departments(
+        self, organization_id: UUID
+    ) -> list[dict[str, Any]]:
+        rows, _ = await self.client.request(
+            "GET",
+            "departments",
+            params={
+                "select": "id,organization_id,name,description,created_at",
+                "organization_id": f"eq.{organization_id}",
+                "order": "name.asc",
+            },
+        )
+        return rows
+
+    async def get_department_membership(
+        self, department_id: UUID, user_id: UUID
+    ) -> dict[str, Any] | None:
+        rows, _ = await self.client.request(
+            "GET",
+            "department_members",
+            params={
+                "select": "department_id,user_id,role,status",
+                "department_id": f"eq.{department_id}",
+                "user_id": f"eq.{user_id}",
+                "status": "eq.active",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def list_department_memberships(
+        self, user_id: UUID, organization_id: UUID
+    ) -> list[dict[str, Any]]:
+        rows, _ = await self.client.request(
+            "GET",
+            "department_members",
+            params={
+                "select": "department_id,role,departments!inner(organization_id)",
+                "user_id": f"eq.{user_id}",
+                "status": "eq.active",
+                "departments.organization_id": f"eq.{organization_id}",
+            },
+        )
+        return rows
+
     async def get_profile(self, user_id: UUID) -> dict[str, Any] | None:
         rows, _ = await self.client.request(
             "GET",
@@ -35,12 +189,25 @@ class MeetFlowRepository:
         )
         return rows[0] if rows else None
 
-    async def create_team(self, name: str, user_id: UUID) -> dict[str, Any]:
+    async def create_team(
+        self,
+        name: str,
+        user_id: UUID,
+        *,
+        organization_id: UUID | None = None,
+        department_id: UUID | None = None,
+    ) -> dict[str, Any]:
         team_id = uuid4()
         await self.client.request(
             "POST",
             "teams",
-            json={"id": str(team_id), "name": name, "created_by": str(user_id)},
+            json={
+                "id": str(team_id),
+                "name": name,
+                "created_by": str(user_id),
+                "organization_id": str(organization_id) if organization_id else None,
+                "department_id": str(department_id) if department_id else None,
+            },
             prefer="return=minimal",
         )
         team = await self.get_team(team_id)
@@ -57,7 +224,12 @@ class MeetFlowRepository:
             "GET",
             "team_members",
             params={
-                "select": "team_id,role,status,teams!inner(id,name,description,created_at)",
+                "select": (
+                    "team_id,role,status,teams!inner("
+                    "id,name,description,created_at,organization_id,department_id,"
+                    "organizations!teams_organization_id_fkey(id,name),"
+                    "departments!teams_department_scope_fk(id,name))"
+                ),
                 "user_id": f"eq.{user_id}",
                 "status": "eq.active",
                 "order": "joined_at.asc",
@@ -69,7 +241,14 @@ class MeetFlowRepository:
         rows, _ = await self.client.request(
             "GET",
             "teams",
-            params={"select": "id,name,description,created_at", "id": f"eq.{team_id}"},
+            params={
+                "select": (
+                    "id,name,description,created_at,organization_id,department_id,"
+                    "organizations!teams_organization_id_fkey(id,name),"
+                    "departments!teams_department_scope_fk(id,name)"
+                ),
+                "id": f"eq.{team_id}",
+            },
         )
         return rows[0] if rows else None
 
@@ -159,14 +338,19 @@ class MeetFlowRepository:
         )
         return rows[0] if rows else None
 
-    async def soft_delete_meeting(self, meeting_id: UUID, version: int, deleted_at: str) -> None:
-        await self.client.request(
-            "PATCH",
-            "meetings",
-            params={"id": f"eq.{meeting_id}", "version": f"eq.{version}", "deleted_at": "is.null"},
-            json={"deleted_at": deleted_at, "version": version + 1},
-            prefer="return=minimal",
+    async def soft_delete_meeting(self, meeting_id: UUID, version: int) -> str:
+        result, _ = await self.client.request(
+            "POST",
+            "rpc/soft_delete_meeting",
+            json={"target_meeting_id": str(meeting_id), "expected_version": version},
         )
+        if not isinstance(result, str):
+            raise AppError(
+                502,
+                "MEETING_DELETE_RESPONSE_INVALID",
+                "회의록 삭제 결과를 확인할 수 없습니다.",
+            )
+        return result
 
     async def get_profiles(self, user_ids: set[UUID]) -> dict[str, dict[str, Any]]:
         if not user_ids:

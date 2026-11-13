@@ -151,6 +151,7 @@ export function MeetingDetailPage() {
   const remove = useMutation({
     mutationFn: () => apiService.deleteMeeting(id),
     onSuccess: () => {
+      queryClient.removeQueries({ queryKey: queryKeys.meeting(id) });
       if (meeting) void queryClient.invalidateQueries({ queryKey: queryKeys.meetings(meeting.team_id) });
       navigate(meeting ? `/t/${meeting.team_id}/meetings` : "/teams", { replace: true });
     },
@@ -164,6 +165,7 @@ export function MeetingDetailPage() {
   if (meetingQuery.isError || !meeting) return <ErrorState message={meetingQuery.error?.message ?? "회의록을 찾을 수 없습니다."} onRetry={() => meetingQuery.refetch()} />;
   const canManage = meeting.is_mine || ["owner", "admin"].includes(teamQuery.data?.my_role ?? "member");
   const canEdit = canManage && meeting.processing_status !== "analyzing";
+  const canDelete = canManage && !["transcribing", "analyzing"].includes(meeting.processing_status);
 
   function downloadText() {
     const current = meeting;
@@ -180,7 +182,7 @@ export function MeetingDetailPage() {
   return <><PageHeader back title={meeting.title} description={`${formatMeetingDate(meeting.meeting_at)} · ${meeting.created_by.name}`} action={<StatusBadge status={meeting.processing_status} />} />
     <div className="mb-4 flex flex-wrap gap-2">{meeting.is_shared_with_me && <Badge className="bg-violet-50 text-violet-700"><LockKeyhole className="h-3.5 w-3.5" />공유받은 회의록 · {canEdit ? "관리자 편집 가능" : "읽기 전용"}</Badge>}</div>
     <MockBanner message="회의록 저장, 파일에서 전문 가져오기와 내용 정리는 실제 서버 기능입니다. 팀원 공유 화면은 아직 Mock 상태입니다." />
-    <div className="my-5 grid grid-cols-4 gap-2"><Button disabled={!canEdit} onClick={() => setEditing((value) => !value)} variant={editing ? "secondary" : "outline"}><Edit3 className="h-4 w-4" /><span className="hidden sm:inline">편집</span></Button><Button asChild={canEdit} disabled={!canEdit} variant="outline">{canEdit ? <Link to={`/meetings/${id}/share`}><Share2 className="h-4 w-4" /><span className="hidden sm:inline">공유</span></Link> : <span><Users className="h-4 w-4" /></span>}</Button><Button onClick={downloadText} variant="outline"><Download className="h-4 w-4" /><span className="hidden sm:inline">TXT</span></Button><Button disabled={!canEdit} onClick={() => setDeleteOpen(true)} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">삭제</span></Button></div>
+    <div className="my-5 grid grid-cols-4 gap-2"><Button disabled={!canEdit} onClick={() => setEditing((value) => !value)} variant={editing ? "secondary" : "outline"}><Edit3 className="h-4 w-4" /><span className="hidden sm:inline">편집</span></Button><Button asChild={canEdit} disabled={!canEdit} variant="outline">{canEdit ? <Link to={`/meetings/${id}/share`}><Share2 className="h-4 w-4" /><span className="hidden sm:inline">공유</span></Link> : <span><Users className="h-4 w-4" /></span>}</Button><Button onClick={downloadText} variant="outline"><Download className="h-4 w-4" /><span className="hidden sm:inline">TXT</span></Button><Button disabled={!canDelete} onClick={() => setDeleteOpen(true)} title={canDelete ? "회의록 삭제" : "진행 중인 작업이 끝난 뒤 삭제할 수 있습니다"} variant="danger"><Trash2 className="h-4 w-4" /><span className="hidden sm:inline">삭제</span></Button></div>
     {editing && <Card className="mb-5"><CardContent className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold text-slate-700">회의 제목<Input className="mt-2" maxLength={100} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} value={draft.title} /></label><label className="text-sm font-bold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDraft((value) => ({ ...value, date: event.target.value }))} type="date" value={draft.date} /></label></CardContent></Card>}
     {saveStatus !== "idle" && <div className="mb-3 text-right"><InlineSavingState state={saveStatus} /></div>}
     {analyze.error && <p className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{analyze.error.message}</p>}
@@ -191,6 +193,6 @@ export function MeetingDetailPage() {
       {tab === "transcript" && !editing && meeting.transcript_segments.length > 0 && <DiarizedTranscript editable={canEdit} meetingId={id} segments={meeting.transcript_segments} speakers={meeting.transcript_speakers} />}
     </MeetingTabs>
     {remove.error && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{remove.error.message}</p>}
-    <ConfirmDialog open={deleteOpen} title="회의록을 삭제할까요?" description="목록에서 숨겨지는 소프트 삭제로 처리됩니다." confirmLabel={remove.isPending ? "삭제 중..." : "삭제"} onClose={() => setDeleteOpen(false)} onConfirm={() => remove.mutate()} />
+    <ConfirmDialog keepOpenOnConfirm open={deleteOpen} pending={remove.isPending} title="회의록을 삭제할까요?" description="목록에서 숨겨지는 소프트 삭제로 처리됩니다. 원본 파일은 즉시 제거하지 않고 별도 보존·정리 정책을 따릅니다." confirmLabel={remove.isPending ? "삭제 중..." : "삭제"} onClose={() => setDeleteOpen(false)} onConfirm={() => remove.mutate()} />
   </>;
 }

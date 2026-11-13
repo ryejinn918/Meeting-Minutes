@@ -150,8 +150,17 @@ ruff check .
 - `GET /api/v1/jobs/{job_id}`
 - `POST /api/v1/jobs/{job_id}/retry`
 - `PATCH /api/v1/meetings/{meeting_id}/notes`
+- `POST/GET /api/v1/organizations`
+- `GET /api/v1/organizations/{organization_id}`
+- `POST /api/v1/organizations/{organization_id}/departments`
 
 오류는 `{ "error": { "code", "message", "details?", "request_id" } }` 형식입니다.
+
+## Phase A 조직 계층
+
+조직과 부문을 등록하고 새 팀을 해당 범위에 연결할 수 있습니다. 기존 팀은 데이터 안전을 위해 자동으로 조직에 배정하지 않으며 `조직 미지정` 상태로 계속 사용할 수 있습니다. 회의록 삭제는 소프트 삭제이며 진행 중인 전사·정리 작업이 있거나 version 충돌이 있으면 삭제하지 않습니다.
+
+새 Migration `202611120005_organization_hierarchy_and_safe_delete.sql`은 아직 원격 DB에 적용하지 않습니다. 적용 전 Supabase 대상 프로젝트와 백업 정책을 확인해야 합니다.
 
 ## 문서
 

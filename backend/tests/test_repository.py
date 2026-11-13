@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pytest
 
+from app.core.errors import AppError
 from app.db.repositories import MeetFlowRepository
 
 
@@ -122,3 +123,58 @@ async def test_team_member_counts_use_one_batched_query() -> None:
     assert params["status"] == "eq.active"
     assert str(first) in params["team_id"]
     assert str(second) in params["team_id"]
+
+
+@pytest.mark.asyncio
+async def test_scoped_team_insert_sends_both_scope_ids() -> None:
+    client = RecordingClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+    organization_id = UUID("22222222-2222-4222-8222-222222222222")
+    department_id = UUID("33333333-3333-4333-8333-333333333333")
+
+    await repository.create_team(
+        "Scoped Team",
+        user_id,
+        organization_id=organization_id,
+        department_id=department_id,
+    )
+
+    payload = client.calls[0]["json"]
+    assert payload["organization_id"] == str(organization_id)
+    assert payload["department_id"] == str(department_id)
+    assert client.calls[0]["prefer"] == "return=minimal"
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_uses_atomic_rpc() -> None:
+    class DeleteClient:
+        async def request(
+            self, method: str, path: str, **kwargs: Any
+        ) -> tuple[Any, dict]:
+            assert method == "POST"
+            assert path == "rpc/soft_delete_meeting"
+            assert kwargs["json"]["expected_version"] == 3
+            return "deleted", {}
+
+    repository = MeetFlowRepository(DeleteClient())  # type: ignore[arg-type]
+    result = await repository.soft_delete_meeting(
+        UUID("33333333-3333-4333-8333-333333333333"), 3
+    )
+
+    assert result == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_rejects_invalid_rpc_response() -> None:
+    class InvalidDeleteClient:
+        async def request(self, *args: Any, **kwargs: Any) -> tuple[Any, dict]:
+            return None, {}
+
+    repository = MeetFlowRepository(InvalidDeleteClient())  # type: ignore[arg-type]
+    with pytest.raises(AppError) as error:
+        await repository.soft_delete_meeting(
+            UUID("33333333-3333-4333-8333-333333333333"), 1
+        )
+
+    assert error.value.code == "MEETING_DELETE_RESPONSE_INVALID"

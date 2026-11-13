@@ -3,7 +3,7 @@ import * as tus from "tus-js-client";
 
 import { apiRequest } from "@/lib/api-client";
 import { supabase } from "@/lib/supabase";
-import type { FileCompleteResponse, Meeting, MeetingFile, MeetingListItem, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
+import type { Department, FileCompleteResponse, Meeting, MeetingFile, MeetingListItem, Organization, OrganizationDetail, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
 
 interface MeApiResponse {
   id: string;
@@ -37,7 +37,11 @@ export const apiService = {
     return normalizeUser({ id: me.id, name: me.display_name, email: me.email, avatar_url: me.avatar_url });
   },
   getTeams: () => apiRequest<Team[]>("/api/v1/teams"),
-  createTeam: (name: string) => apiRequest<Team>("/api/v1/teams", { method: "POST", body: JSON.stringify({ name }) }),
+  createTeam: (input: { name: string; organization_id?: string; department_id?: string }) => apiRequest<Team>("/api/v1/teams", { method: "POST", body: JSON.stringify(input) }),
+  getOrganizations: () => apiRequest<Organization[]>("/api/v1/organizations"),
+  createOrganization: (name: string) => apiRequest<Organization>("/api/v1/organizations", { method: "POST", body: JSON.stringify({ name }) }),
+  getOrganization: (id: string) => apiRequest<OrganizationDetail>(`/api/v1/organizations/${id}`),
+  createDepartment: (organizationId: string, name: string) => apiRequest<Department>(`/api/v1/organizations/${organizationId}/departments`, { method: "POST", body: JSON.stringify({ name }) }),
   async getTeam(teamId: string): Promise<TeamDetail> {
     const team = await apiRequest<TeamDetail>(`/api/v1/teams/${teamId}`);
     return { ...team, members: team.members.map(normalizeMember) };

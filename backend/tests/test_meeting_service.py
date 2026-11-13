@@ -229,3 +229,40 @@ async def test_meeting_detail_loads_independent_resources_concurrently() -> None
     release.set()
     result = await task
     assert result.id == MEETING_ID
+
+
+@pytest.mark.asyncio
+async def test_delete_rejects_meeting_with_active_job() -> None:
+    class DeleteRepository(PartialTranscriptRepository):
+        async def soft_delete_meeting(self, meeting_id: UUID, version: int) -> str:
+            assert meeting_id == MEETING_ID
+            assert version == 1
+            return "active_job"
+
+    service = MeetingService(
+        DeleteRepository(),  # type: ignore[arg-type]
+        AuthenticatedUser(id=USER_ID, email=None, access_token="test"),
+    )
+
+    with pytest.raises(Exception) as error:
+        await service.delete(MEETING_ID)
+
+    assert getattr(error.value, "code", None) == "MEETING_PROCESSING_ACTIVE"
+    assert getattr(error.value, "status_code", None) == 409
+
+
+@pytest.mark.asyncio
+async def test_delete_surfaces_version_conflict() -> None:
+    class DeleteRepository(PartialTranscriptRepository):
+        async def soft_delete_meeting(self, meeting_id: UUID, version: int) -> str:
+            return "version_conflict"
+
+    service = MeetingService(
+        DeleteRepository(),  # type: ignore[arg-type]
+        AuthenticatedUser(id=USER_ID, email=None, access_token="test"),
+    )
+
+    with pytest.raises(Exception) as error:
+        await service.delete(MEETING_ID)
+
+    assert getattr(error.value, "code", None) == "MEETING_VERSION_CONFLICT"
