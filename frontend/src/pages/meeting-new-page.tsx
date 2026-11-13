@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileAudio, FileText, Keyboard, LoaderCircle, Save, UploadCloud } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { apiService, sha256File } from "@/lib/api-service";
 import { queryKeys } from "@/lib/query-keys";
+import type { MeetingType } from "@/types/api";
 
 type InputMode = "audio" | "document" | "text";
 type UploadStage = "idle" | "preparing" | "uploading" | "confirming";
@@ -40,11 +41,35 @@ export function MeetingNewPage() {
   const pendingMeetingId = useRef<string | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [topic, setTopic] = useState("");
+  const [location, setLocation] = useState("");
+  const [meetingType, setMeetingType] = useState<MeetingType>("general");
+  const [templateId, setTemplateId] = useState("");
+  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [mode, setMode] = useState<InputMode>("text");
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [uploadStage, setUploadStage] = useState<UploadStage>("idle");
+  const teamQuery = useQuery({
+    queryKey: queryKeys.team(teamId),
+    queryFn: () => apiService.getTeam(teamId),
+    enabled: Boolean(teamId),
+  });
+  const qualityQuery = useQuery({
+    queryKey: queryKeys.qualityOptions(teamId),
+    queryFn: () => apiService.getQualityOptions(teamId),
+    enabled: Boolean(teamId),
+  });
+
+  const metadata = {
+    topic: topic.trim(),
+    location: location.trim(),
+    meeting_type: meetingType,
+    template_id: templateId.startsWith("builtin-") || !templateId ? null : templateId,
+    attendees: attendeeIds.map((user_id) => ({ user_id })),
+    metadata_confirmed: true,
+  };
 
   const create = useMutation({
     mutationFn: async () => {
@@ -54,6 +79,7 @@ export function MeetingNewPage() {
           title: title.trim(),
           meeting_at: `${date}T09:00:00+09:00`,
           source_type: "direct",
+          ...metadata,
         });
         return { meeting: await apiService.saveTranscript(meeting.id, text.trim()), jobId: null };
       }
@@ -67,6 +93,7 @@ export function MeetingNewPage() {
           title: title.trim(),
           meeting_at: `${date}T09:00:00+09:00`,
           source_type: mode === "audio" ? "audio" : extension === "pdf" ? "pdf" : "txt",
+          ...metadata,
         });
         pendingMeetingId.current = meeting.id;
       }
@@ -125,7 +152,20 @@ export function MeetingNewPage() {
 
   return <><PageHeader back title="새 회의록" description="회의 내용을 직접 입력하거나 파일에서 가져올 수 있어요." />
     <form className="mt-5 space-y-5" onSubmit={submit}>
-      <Card><CardContent className="space-y-4"><label className="block text-sm font-semibold text-slate-700">회의 제목<Input className="mt-2" maxLength={100} onChange={(event) => setTitle(event.target.value)} placeholder="예: 11월 주간 프로젝트 회의" value={title} /></label><label className="block text-sm font-semibold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDate(event.target.value)} type="date" value={date} /></label></CardContent></Card>
+      <Card><CardContent className="space-y-4">
+        <label className="block text-sm font-semibold text-slate-700">회의 제목<Input className="mt-2" maxLength={100} onChange={(event) => setTitle(event.target.value)} placeholder="예: 11월 주간 프로젝트 회의" value={title} /></label>
+        <label className="block text-sm font-semibold text-slate-700">회의 주제<Input className="mt-2" maxLength={500} onChange={(event) => setTopic(event.target.value)} placeholder="이번 회의에서 다룰 핵심 주제" value={topic} /></label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm font-semibold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDate(event.target.value)} type="date" value={date} /></label>
+          <label className="block text-sm font-semibold text-slate-700">장소<Input className="mt-2" maxLength={300} onChange={(event) => setLocation(event.target.value)} placeholder="선택 입력" value={location} /></label>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm font-semibold text-slate-700">회의 유형<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setMeetingType(event.target.value as MeetingType)} value={meetingType}><option value="general">일반 회의</option><option value="project">프로젝트 회의</option><option value="interview">인터뷰</option><option value="workshop">워크숍·아이디어 회의</option></select></label>
+          <label className="block text-sm font-semibold text-slate-700">회의록 템플릿<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setTemplateId(event.target.value)} value={templateId}><option value="">유형 기본 템플릿</option>{qualityQuery.data?.templates.filter((item) => item.meeting_type === meetingType).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        </div>
+        {teamQuery.data?.members.length ? <fieldset><legend className="text-sm font-semibold text-slate-700">참석자</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{teamQuery.data.members.map((member) => <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm" key={member.id}><input checked={attendeeIds.includes(member.id)} onChange={(event) => setAttendeeIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} type="checkbox" />{member.name}</label>)}</div></fieldset> : null}
+        <p className="text-xs leading-5 text-slate-500">입력한 회의 정보와 참석자를 확인한 상태로 저장됩니다. 나중에 상세 화면에서 수정할 수 있어요.</p>
+      </CardContent></Card>
       <section><h2 className="mb-3 text-sm font-bold text-slate-800">입력 방식</h2><div className="grid grid-cols-3 gap-2">{options.map(({ id, label, caption, icon: Icon }) => <button className={cn("min-w-0 rounded-2xl border bg-white p-3 text-left transition", mode === id ? "border-indigo-400 ring-2 ring-indigo-100" : "border-slate-200")} disabled={create.isPending} key={id} onClick={() => { setMode(id); setFile(null); setError(""); }} type="button"><Icon className={cn("h-5 w-5", mode === id ? "text-indigo-600" : "text-slate-400")} /><span className="mt-3 block truncate text-xs font-bold text-slate-800">{label}</span><span className="mt-0.5 block truncate text-[10px] text-slate-400">{caption}</span></button>)}</div></section>
       <Card><CardContent>{mode === "text" ? <label className="block text-sm font-semibold text-slate-700">회의 전문<Textarea className="mt-2 min-h-60" onChange={(event) => setText(event.target.value)} placeholder="회의 내용을 여기에 입력하거나 붙여넣어 주세요." value={text} /><span className="mt-2 block text-right text-xs text-slate-400">{text.length.toLocaleString()}자</span></label> : <FileUpload file={file} maxAudioBytes={MAX_AUDIO_BYTES} mode={mode} onChange={setFile} />}</CardContent></Card>
       {create.isPending && mode !== "text" && <Card className="border-indigo-100 bg-indigo-50/60 shadow-none"><CardContent aria-live="polite" className="flex items-center gap-3" role="status"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600"><LoaderCircle className="h-5 w-5 animate-spin" /></span><div><p className="text-sm font-bold text-slate-800">{stageMessage}</p><p className="mt-1 text-xs text-slate-500">이 화면을 닫지 말고 잠시 기다려 주세요.</p></div></CardContent></Card>}

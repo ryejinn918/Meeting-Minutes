@@ -4,22 +4,40 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.quality import AttendeeInput, AttendeeResponse, MeetingType, QuestionResponse
+
 
 class MeetingCreate(BaseModel):
     team_id: UUID
     title: str = Field(min_length=1, max_length=100)
     meeting_at: datetime
     source_type: Literal["direct", "txt", "pdf", "audio"] = "direct"
+    topic: str = Field(default="", max_length=500)
+    location: str = Field(default="", max_length=300)
+    meeting_type: MeetingType = "general"
+    purpose: str = Field(default="", max_length=1000)
+    project_name: str = Field(default="", max_length=300)
+    template_id: UUID | None = None
+    attendees: list[AttendeeInput] = Field(default_factory=list, max_length=100)
+    metadata_confirmed: bool = False
 
 
 class MeetingUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     meeting_at: datetime | None = None
     version: int | None = Field(default=None, ge=1)
+    topic: str | None = Field(default=None, max_length=500)
+    location: str | None = Field(default=None, max_length=300)
+    meeting_type: MeetingType | None = None
+    purpose: str | None = Field(default=None, max_length=1000)
+    project_name: str | None = Field(default=None, max_length=300)
+    template_id: UUID | None = None
+    attendees: list[AttendeeInput] | None = Field(default=None, max_length=100)
+    metadata_confirmed: bool | None = None
 
     @model_validator(mode="after")
     def require_change(self) -> "MeetingUpdate":
-        if self.title is None and self.meeting_at is None:
+        if not self.model_fields_set - {"version"}:
             raise ValueError("수정할 제목 또는 회의 날짜가 필요합니다.")
         return self
 
@@ -45,6 +63,7 @@ class TranscriptSegmentResponse(BaseModel):
     start_seconds: float
     end_seconds: float
     text: str
+    original_speaker_id: UUID | None = None
 
 
 class EditableDiscussionItem(BaseModel):
@@ -116,6 +135,17 @@ class MeetingResponse(BaseModel):
     action_items: list[ActionItemResponse] = Field(default_factory=list)
     shared_member_ids: list[UUID] = Field(default_factory=list)
     ai_generated_at: datetime | None = None
+    topic: str = ""
+    location: str = ""
+    meeting_type: MeetingType = "general"
+    purpose: str = ""
+    project_name: str = ""
+    template_id: UUID | None = None
+    metadata_confirmed_at: datetime | None = None
+    attendees: list[AttendeeResponse] = Field(default_factory=list)
+    transcript_corrected: str = ""
+    questions: list[QuestionResponse] = Field(default_factory=list)
+    latest_speaker_edit_batch_id: UUID | None = None
 
 
 def normalize_items(value: Any) -> list[DiscussionItem]:

@@ -18,6 +18,7 @@ from app.db.ai_repositories import AIRepository
 from app.db.client import SupabaseRestClient
 from app.db.repositories import MeetFlowRepository
 from app.services.file_ingestion import FileIngestionService
+from app.services.quality import QualityService
 from app.storage.client import SupabaseStorageClient
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -62,9 +63,7 @@ def get_admin_repository(
             "서버의 Supabase 관리 연결이 설정되지 않았습니다.",
         )
     legacy_service_role_token = (
-        settings.supabase_secret_key
-        if settings.supabase_secret_key.startswith("eyJ")
-        else None
+        settings.supabase_secret_key if settings.supabase_secret_key.startswith("eyJ") else None
     )
     client = SupabaseRestClient(
         settings,
@@ -128,6 +127,14 @@ def get_analysis_service(
         provider=provider,
         settings=settings,
     )
+
+
+def get_quality_service(
+    user: AuthenticatedUser = Depends(get_current_user),
+    repository: MeetFlowRepository = Depends(get_repository),
+    provider: AnalysisProvider = Depends(get_analysis_provider),
+) -> QualityService:
+    return QualityService(repository, user, provider)
 
 
 def get_file_ingestion_service(

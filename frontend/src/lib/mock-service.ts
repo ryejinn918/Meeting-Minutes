@@ -52,6 +52,17 @@ export const mockService = {
     await wait(420);
     const id = `meeting-${Date.now()}`;
     const meeting: Meeting = {
+      topic: "",
+      location: "",
+      meeting_type: "general",
+      purpose: "",
+      project_name: "",
+      template_id: null,
+      metadata_confirmed_at: null,
+      attendees: [],
+      transcript_corrected: "",
+      questions: [],
+      latest_speaker_edit_batch_id: null,
       id,
       team_id: input.team_id,
       title: input.title,

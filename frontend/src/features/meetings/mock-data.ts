@@ -1,6 +1,20 @@
 import { currentUser, mockMembers } from "@/features/teams/mock-teams";
 import type { Meeting } from "@/types/api";
 
+const phaseBDefaults = {
+  topic: "",
+  location: "",
+  meeting_type: "general" as const,
+  purpose: "",
+  project_name: "",
+  template_id: null,
+  metadata_confirmed_at: null,
+  attendees: [],
+  transcript_corrected: "",
+  questions: [],
+  latest_speaker_edit_batch_id: null,
+};
+
 const transcript = `김민지: 이번 주에는 로그인 화면과 팀 선택 흐름을 먼저 완성하겠습니다. 모바일 화면을 기준으로 작업하고 데스크톱에서도 자연스럽게 확장되도록 구성할게요.
 
 이서연: 로그인 기능은 목요일까지 프론트엔드 Mock 흐름을 마무리하고, 다음 단계에서 Supabase Auth로 교체하는 것으로 하죠.
@@ -13,6 +27,7 @@ const transcript = `김민지: 이번 주에는 로그인 화면과 팀 선택 �
 
 export const initialMeetings: Meeting[] = [
   {
+    ...phaseBDefaults,
     id: "meeting-weekly-project",
     team_id: "team-ai-innovation",
     title: "주간 프로젝트 회의",
@@ -49,6 +64,7 @@ export const initialMeetings: Meeting[] = [
     version: 1,
   },
   {
+    ...phaseBDefaults,
     id: "meeting-ai-schedule",
     team_id: "team-ai-innovation",
     title: "AI 서비스 개발 일정 논의",
@@ -73,6 +89,7 @@ export const initialMeetings: Meeting[] = [
     version: 1,
   },
   {
+    ...phaseBDefaults,
     id: "meeting-new-feature",
     team_id: "team-ai-innovation",
     title: "신규 기능 기획 회의",

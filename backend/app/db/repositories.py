@@ -6,7 +6,8 @@ from app.db.client import SupabaseRestClient
 
 MEETING_SELECT = (
     "id,team_id,title,meeting_at,source_type,created_by,processing_status,"
-    "current_transcript_id,current_notes_id,version"
+    "current_transcript_id,current_notes_id,version,topic,location,meeting_type,"
+    "purpose,project_name,template_id,metadata_confirmed_at"
 )
 
 
@@ -369,7 +370,10 @@ class MeetFlowRepository:
         rows, _ = await self.client.request(
             "GET",
             "meeting_transcripts",
-            params={"select": "id,original_text,edited_text", "id": f"eq.{transcript_id}"},
+            params={
+                "select": "id,original_text,corrected_text,edited_text",
+                "id": f"eq.{transcript_id}",
+            },
         )
         return rows[0] if rows else None
 
@@ -380,7 +384,7 @@ class MeetFlowRepository:
             "GET",
             "meeting_transcripts",
             params={
-                "select": "id,original_text,edited_text",
+                "select": "id,original_text,corrected_text,edited_text",
                 "meeting_id": f"eq.{meeting_id}",
                 "created_by": f"eq.{user_id}",
                 "source": "eq.direct",

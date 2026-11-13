@@ -8,5 +8,6 @@ export const queryKeys = {
   meetings: (teamId: string) => ["meetings", teamId] as const,
   meeting: (meetingId: string) => ["meetings", "detail", meetingId] as const,
   meetingFiles: (meetingId: string) => ["meetings", "detail", meetingId, "files"] as const,
+  qualityOptions: (teamId: string) => ["teams", teamId, "quality-options"] as const,
   job: (jobId: string) => ["jobs", jobId] as const,
 };

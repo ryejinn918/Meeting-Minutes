@@ -4,6 +4,7 @@ export type TeamRole = "owner" | "admin" | "member";
 export type OrganizationRole = "org_admin" | "member";
 export type DepartmentRole = "department_admin" | "member";
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
+export type MeetingType = "general" | "project" | "interview" | "workshop";
 
 export interface ApiErrorEnvelope {
   error: {
@@ -103,6 +104,17 @@ export interface Meeting {
   shared_member_ids: string[];
   ai_generated_at: string | null;
   version: number;
+  topic: string;
+  location: string;
+  meeting_type: MeetingType;
+  purpose: string;
+  project_name: string;
+  template_id: string | null;
+  metadata_confirmed_at: string | null;
+  attendees: MeetingAttendee[];
+  transcript_corrected: string;
+  questions: MeetingQuestion[];
+  latest_speaker_edit_batch_id: string | null;
 }
 
 export type MeetingListItem = Pick<
@@ -131,6 +143,71 @@ export interface TranscriptSegment {
   start_seconds: number;
   end_seconds: number;
   text: string;
+  original_speaker_id: string | null;
+}
+
+export interface MeetingAttendee {
+  id: string;
+  user_id: string | null;
+  external_name: string | null;
+  external_organization: string | null;
+  display_name: string;
+}
+
+export interface TemplateSection {
+  key: string;
+  label: string;
+}
+
+export interface MeetingTemplate {
+  id: string;
+  organization_id: string | null;
+  department_id: string | null;
+  team_id: string | null;
+  name: string;
+  description: string;
+  meeting_type: MeetingType;
+  sections: TemplateSection[];
+  writing_rules: string;
+  is_default: boolean;
+  version: number;
+  is_active: boolean;
+  is_builtin: boolean;
+  created_at: string | null;
+}
+
+export interface GlossaryTerm {
+  id: string;
+  organization_id: string | null;
+  department_id: string | null;
+  team_id: string | null;
+  term: string;
+  preferred_term: string;
+  aliases: string[];
+  description: string;
+  created_at: string;
+}
+
+export interface QualityOptions {
+  templates: MeetingTemplate[];
+  glossary_terms: GlossaryTerm[];
+}
+
+export interface MeetingQuestion {
+  id: string;
+  category: "decision" | "assignee" | "due_date" | "number" | "name" | "speaker" | "other";
+  question: string;
+  evidence: string | null;
+  answer: string | null;
+  status: "pending" | "answered" | "dismissed";
+  created_at: string;
+  answered_at: string | null;
+}
+
+export interface TranscriptCorrectionResult {
+  corrected_text: string;
+  changes: Array<{ original: string; corrected: string; reason: string }>;
+  uncertainties: Array<{ category: MeetingQuestion["category"]; question: string; evidence: string | null }>;
 }
 
 export interface ProcessingJob {

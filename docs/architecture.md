@@ -480,3 +480,16 @@ SIGNED_URL_TTL_SECONDS=300
 삭제는 물리 삭제가 아닌 `meetings.deleted_at` 소프트 삭제다. `public.soft_delete_meeting()` RPC가 사용자 JWT/RLS 아래에서 현재 version과 활성 `processing_jobs`를 한 transaction 안에서 확인한다. 활성 작업이 있으면 `409 MEETING_PROCESSING_ACTIVE`, version이 바뀌면 `409 MEETING_VERSION_CONFLICT`를 반환한다. 작성자 또는 팀 owner/admin만 삭제할 수 있고 공유받은 사용자는 거부된다.
 
 소프트 삭제 시 transcript, notes, AI run, action item, 원본 Storage object는 즉시 삭제하지 않는다. 조회 권한은 기존 `deleted_at is null` 조건으로 즉시 닫히며, 물리 삭제는 향후 조직별 보존 기간·감사·복구 정책이 확정된 뒤 별도 관리 작업으로 수행한다.
+
+## 12. Phase B 회의록 품질 개선
+
+Phase B는 기존 팀·회의록을 백필하거나 삭제하지 않고 선택형 품질 정보를 추가한다. 기존 회의는 `meeting_type=general`, 빈 주제·장소·목적을 기본값으로 사용하므로 기존 API 응답과 직접 입력·파일 전사 흐름이 유지된다.
+
+- 회의 메타데이터: 주제, 장소, 회의 유형, 목적, 프로젝트, 참석자, 확인 시각을 관리한다.
+- 템플릿: MeetFlow 공통 4종은 코드의 중립적인 기본값이며 DB에 자동 등록하지 않는다. 조직·부문·팀 관리자는 별도 템플릿을 만들 수 있고 수정 전 snapshot은 `meeting_template_versions`에 보존한다.
+- 용어집: 조직·부문·팀 scope로 선택 등록한다. 실제 용어는 자동 생성하지 않으며 등록 항목이 없어도 STT와 회의록 정리는 정상 동작한다.
+- 교정: 현재 편집 전문을 입력으로 사용하지만 최초 STT `original_text`와 사용자 `edited_text`를 덮어쓰지 않는다. 결과는 `corrected_text`와 `transcript_corrections` 이력에 저장하고 사용자가 확인한 뒤 편집본에 적용한다.
+- 확인 질문: 결정·담당자·기한·수치·이름·화자가 불확실할 때만 저장하며 답변 이후 STT를 재호출하지 않는다.
+- 화자 확인: 전역 표시명 변경 외에 단일 발언 또는 해당 구간 이후 같은 provider 화자만 재지정한다. 변경 배치를 보존해 최근 변경을 되돌릴 수 있다.
+
+템플릿과 용어집 scope는 조직·부문·팀 ID의 실제 소속 관계를 trigger로 검증한다. 조회는 해당 조직 구성원 또는 팀 구성원, 변경은 조직/부문/팀 관리자만 허용한다. 회의·참석자·교정·질문·발언 변경은 기존 `can_view_meeting`/`can_manage_meeting` 경계를 재사용한다. `202611130001_phase_b_meeting_quality.sql`은 신규 테이블과 RPC만 준비하며 기존 행을 임의 조직에 배정하거나 원격 DB에 자동 적용하지 않는다.

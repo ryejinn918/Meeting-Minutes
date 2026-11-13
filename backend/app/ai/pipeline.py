@@ -7,6 +7,7 @@ from app.core.errors import AppError
 from app.core.security import AuthenticatedUser
 from app.core.settings import Settings
 from app.db.ai_repositories import AIRepository
+from app.db.quality_repository import QualityRepository
 from app.db.repositories import MeetFlowRepository
 from app.schemas.jobs import JobResponse
 from app.services.authorization import AuthorizationService
@@ -147,10 +148,51 @@ class AnalysisService:
                     retryable=False,
                 )
             await self._set_meeting_status(meeting, "analyzing")
-            meeting_at = datetime.fromisoformat(
-                str(meeting["meeting_at"]).replace("Z", "+00:00")
+            meeting_at = datetime.fromisoformat(str(meeting["meeting_at"]).replace("Z", "+00:00"))
+            client = getattr(self.admin_repository, "client", None)
+            quality_repository = QualityRepository(client) if client is not None else None
+            team = (
+                await self.admin_repository.get_team(UUID(meeting["team_id"]))
+                if quality_repository
+                else None
             )
-            result = await self.provider.analyze(text, meeting_date=meeting_at.date())
+            glossary = (
+                await quality_repository.list_glossary(team) if quality_repository and team else []
+            )
+            questions = (
+                await quality_repository.list_questions(meeting_id) if quality_repository else []
+            )
+            template = None
+            if quality_repository and meeting.get("template_id"):
+                template = await quality_repository.get_template(UUID(meeting["template_id"]))
+            context = {
+                "topic": meeting.get("topic", ""),
+                "meeting_type": meeting.get("meeting_type", "general"),
+                "purpose": meeting.get("purpose", ""),
+                "project_name": meeting.get("project_name", ""),
+                "template": {
+                    "name": template.get("name"),
+                    "sections": template.get("sections", []),
+                    "writing_rules": template.get("writing_rules", ""),
+                }
+                if template
+                else None,
+                "glossary": [
+                    {
+                        "term": item["term"],
+                        "preferred_term": item["preferred_term"],
+                    }
+                    for item in glossary
+                ],
+                "confirmed_answers": [
+                    {"question": item["question"], "answer": item.get("answer")}
+                    for item in questions
+                    if item.get("status") == "answered"
+                ],
+            }
+            result = await self.provider.analyze(
+                text, meeting_date=meeting_at.date(), context=context
+            )
             output = result.analysis.model_dump(mode="json")
             usage = dict(result.usage)
             if result.request_id:
@@ -299,6 +341,5 @@ class AnalysisService:
     @staticmethod
     def _notes_items(items: list[Any]) -> list[dict[str, Any]]:
         return [
-            {"id": str(uuid4()), "text": item.text, "evidence": item.evidence}
-            for item in items
+            {"id": str(uuid4()), "text": item.text, "evidence": item.evidence} for item in items
         ]

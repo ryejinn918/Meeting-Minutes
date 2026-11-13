@@ -3,7 +3,7 @@ import * as tus from "tus-js-client";
 
 import { apiRequest } from "@/lib/api-client";
 import { supabase } from "@/lib/supabase";
-import type { Department, FileCompleteResponse, Meeting, MeetingFile, MeetingListItem, Organization, OrganizationDetail, ProcessingJob, Team, TeamDetail, TeamMember, UploadUrlResponse, User } from "@/types/api";
+import type { Department, FileCompleteResponse, GlossaryTerm, Meeting, MeetingFile, MeetingListItem, MeetingQuestion, MeetingTemplate, Organization, OrganizationDetail, ProcessingJob, QualityOptions, Team, TeamDetail, TeamMember, TranscriptCorrectionResult, UploadUrlResponse, User } from "@/types/api";
 
 interface MeApiResponse {
   id: string;
@@ -53,13 +53,13 @@ export const apiService = {
   async getMeeting(id: string): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}`));
   },
-  async createMeeting(input: { team_id: string; title: string; meeting_at: string; source_type?: "direct" | "txt" | "pdf" | "audio" }): Promise<Meeting> {
+  async createMeeting(input: { team_id: string; title: string; meeting_at: string; source_type?: "direct" | "txt" | "pdf" | "audio"; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>("/api/v1/meetings", {
       method: "POST",
       body: JSON.stringify({ ...input, source_type: input.source_type ?? "direct" }),
     }));
   },
-  async updateMeeting(id: string, input: { title?: string; meeting_at?: string; version: number }): Promise<Meeting> {
+  async updateMeeting(id: string, input: { title?: string; meeting_at?: string; version: number; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}`, { method: "PATCH", body: JSON.stringify(input) }));
   },
   async saveTranscript(id: string, text: string): Promise<Meeting> {
@@ -121,6 +121,25 @@ export const apiService = {
     }),
   getMeetingFiles: (meetingId: string) =>
     apiRequest<MeetingFile[]>(`/api/v1/meetings/${meetingId}/files`),
+  getQualityOptions: (teamId: string) =>
+    apiRequest<QualityOptions>(`/api/v1/teams/${teamId}/quality-options`),
+  createTemplate: (input: Omit<MeetingTemplate, "id" | "version" | "is_active" | "is_builtin" | "created_at">) =>
+    apiRequest<MeetingTemplate>("/api/v1/meeting-templates", { method: "POST", body: JSON.stringify(input) }),
+  updateTemplate: (id: string, input: Partial<Pick<MeetingTemplate, "name" | "description" | "sections" | "writing_rules" | "is_default" | "is_active">>) =>
+    apiRequest<MeetingTemplate>(`/api/v1/meeting-templates/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteTemplate: (id: string) => apiRequest<void>(`/api/v1/meeting-templates/${id}`, { method: "DELETE" }),
+  createGlossaryTerm: (input: Omit<GlossaryTerm, "id" | "created_at">) =>
+    apiRequest<GlossaryTerm>("/api/v1/glossary-terms", { method: "POST", body: JSON.stringify(input) }),
+  updateGlossaryTerm: (id: string, input: Partial<Pick<GlossaryTerm, "term" | "preferred_term" | "aliases" | "description">>) =>
+    apiRequest<GlossaryTerm>(`/api/v1/glossary-terms/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteGlossaryTerm: (id: string) => apiRequest<void>(`/api/v1/glossary-terms/${id}`, { method: "DELETE" }),
+  correctTranscript: (meetingId: string) => apiRequest<TranscriptCorrectionResult>(`/api/v1/meetings/${meetingId}/transcript/correct`, { method: "POST" }),
+  answerQuestion: (meetingId: string, questionId: string, answer: string | null, status: "answered" | "dismissed") =>
+    apiRequest<MeetingQuestion>(`/api/v1/meetings/${meetingId}/questions/${questionId}`, { method: "PATCH", body: JSON.stringify({ answer, status }) }),
+  editSegmentSpeaker: (meetingId: string, segmentId: string, speakerId: string, scope: "single" | "following") =>
+    apiRequest<{ batch_id: string; changed_count: number }>(`/api/v1/meetings/${meetingId}/transcript-segments/${segmentId}/speaker`, { method: "PATCH", body: JSON.stringify({ speaker_id: speakerId, scope }) }),
+  undoSpeakerEdit: (meetingId: string, batchId: string) =>
+    apiRequest<{ batch_id: string; changed_count: number }>(`/api/v1/meetings/${meetingId}/speaker-edits/${batchId}/undo`, { method: "POST" }),
 };
 
 async function uploadResumable(input: UploadUrlResponse, file: File): Promise<void> {
