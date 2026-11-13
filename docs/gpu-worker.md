@@ -17,6 +17,15 @@ Windows 사용자 또는 워커 전용 실행 환경에는 다음을 등록합�
 - `HF_TOKEN`: 기존 Windows 사용자 환경변수
 - `WHISPERX_MODEL=large-v3`
 - `WHISPERX_BATCH_SIZE=8`
+- `WHISPERX_ASR_CACHE_DIR`: faster-whisper Hub 캐시 루트
+- `WHISPERX_ALIGNMENT_CACHE_DIR`: 한국어 alignment Hub 캐시 루트
+- `PYANNOTE_MODEL_PATH`: Community-1 snapshot 디렉터리 또는 `config.yaml` 경로
+- `WHISPERX_LOCAL_FILES_ONLY=true`: 위 로컬 캐시만 사용하고 모델 다운로드를 금지
+
+오프라인 모드에서는 세 캐시 경로를 모두 지정해야 합니다. 경로가 없거나 Community-1의
+`config.yaml`을 찾을 수 없으면 워커는 네트워크 다운로드로 전환하지 않고 해당 작업을
+실패 처리합니다. 로컬 Community-1 snapshot을 사용할 때 `HF_TOKEN`은 모델 로딩에
+전달되지 않지만, 모델 라이선스와 접근 승인은 계속 준수해야 합니다.
 
 승인 후 `202611130002_phase_c_gpu_worker_collaboration.sql`을 적용하고 전용 Python 3.12 환경에서 `python gpu_worker/worker.py`를 실행합니다. 워커가 꺼져 있으면 작업은 queued로 대기하며 OpenAI로 자동 전환하지 않습니다.
 
