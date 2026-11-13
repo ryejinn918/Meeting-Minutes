@@ -46,6 +46,14 @@ export const apiService = {
     const team = await apiRequest<TeamDetail>(`/api/v1/teams/${teamId}`);
     return { ...team, members: team.members.map(normalizeMember) };
   },
+  createInvitation: (teamId: string, email: string) =>
+    apiRequest<{ id: string; team_id: string; email: string; expires_at: string; accept_url: string }>(`/api/v1/teams/${teamId}/invitations`, { method: "POST", body: JSON.stringify({ email, role: "member" }) }),
+  acceptInvitation: (token: string) =>
+    apiRequest<{ team_id: string }>(`/api/v1/invitations/${encodeURIComponent(token)}/accept`, { method: "POST" }),
+  declineInvitation: (token: string) =>
+    apiRequest<void>(`/api/v1/invitations/${encodeURIComponent(token)}/decline`, { method: "POST" }),
+  cancelInvitation: (teamId: string, invitationId: string) =>
+    apiRequest<void>(`/api/v1/teams/${teamId}/invitations/${invitationId}`, { method: "DELETE" }),
   async getMeetings(teamId: string): Promise<MeetingListItem[]> {
     const meetings = await apiRequest<MeetingListItem[]>(`/api/v1/meetings?team_id=${encodeURIComponent(teamId)}`);
     return meetings.map(normalizeMeetingListItem);
@@ -53,6 +61,11 @@ export const apiService = {
   async getMeeting(id: string): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}`));
   },
+  replaceMeetingShares: (id: string, memberIds: string[]) =>
+    apiRequest<Meeting>(`/api/v1/meetings/${id}/shares`, {
+      method: "PUT",
+      body: JSON.stringify({ shares: memberIds.map((user_id) => ({ user_id, can_edit: false })) }),
+    }),
   async createMeeting(input: { team_id: string; title: string; meeting_at: string; source_type?: "direct" | "txt" | "pdf" | "audio"; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>("/api/v1/meetings", {
       method: "POST",
@@ -96,7 +109,7 @@ export const apiService = {
   startAnalysis: (id: string) => apiRequest<ProcessingJob>(`/api/v1/meetings/${id}/process`, { method: "POST" }),
   getJob: (id: string) => apiRequest<ProcessingJob>(`/api/v1/jobs/${id}`),
   retryJob: (id: string) => apiRequest<ProcessingJob>(`/api/v1/jobs/${id}/retry`, { method: "POST" }),
-  createUploadUrl: (meetingId: string, input: { filename: string; content_type: string; size_bytes: number; sha256: string }) =>
+  createUploadUrl: (meetingId: string, input: { filename: string; content_type: string; size_bytes: number; sha256: string; stt_provider?: "openai" | "whisperx" }) =>
     apiRequest<UploadUrlResponse>(`/api/v1/meetings/${meetingId}/files/upload-url`, {
       method: "POST",
       body: JSON.stringify(input),

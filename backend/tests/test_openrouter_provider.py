@@ -114,9 +114,7 @@ async def test_invalid_json_is_rejected() -> None:
         (429, "AI_RATE_LIMITED", True),
     ],
 )
-async def test_provider_http_errors(
-    status_code: int, expected_code: str, retryable: bool
-) -> None:
+async def test_provider_http_errors(status_code: int, expected_code: str, retryable: bool) -> None:
     StubClient.queue = [httpx.Response(status_code)]
 
     with pytest.raises(AIProviderError) as error:

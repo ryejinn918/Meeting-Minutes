@@ -19,9 +19,7 @@ def build_analysis_prompt(
     context: dict[str, Any] | None = None,
 ) -> str:
     context_block = (
-        f"Meeting context (JSON): {json.dumps(context, ensure_ascii=False)}\n\n"
-        if context
-        else ""
+        f"Meeting context (JSON): {json.dumps(context, ensure_ascii=False)}\n\n" if context else ""
     )
     return (
         f"{context_block}"

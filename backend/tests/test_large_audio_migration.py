@@ -2,9 +2,9 @@ from pathlib import Path
 
 
 def test_large_audio_migration_keeps_chunks_private_and_minimal() -> None:
-    migration = Path(
-        "../supabase/migrations/202611120002_large_audio_chunking.sql"
-    ).read_text(encoding="utf-8")
+    migration = Path("../supabase/migrations/202611120002_large_audio_chunking.sql").read_text(
+        encoding="utf-8"
+    )
 
     assert "add column usage jsonb" in migration
     assert "create table public.processing_job_chunks" in migration

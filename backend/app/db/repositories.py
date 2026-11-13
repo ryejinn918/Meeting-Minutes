@@ -39,9 +39,7 @@ class MeetFlowRepository:
             )
         return organization
 
-    async def get_organization(
-        self, organization_id: UUID
-    ) -> dict[str, Any] | None:
+    async def get_organization(self, organization_id: UUID) -> dict[str, Any] | None:
         rows, _ = await self.client.request(
             "GET",
             "organizations",
@@ -52,9 +50,7 @@ class MeetFlowRepository:
         )
         return rows[0] if rows else None
 
-    async def list_organization_memberships(
-        self, user_id: UUID
-    ) -> list[dict[str, Any]]:
+    async def list_organization_memberships(self, user_id: UUID) -> list[dict[str, Any]]:
         rows, _ = await self.client.request(
             "GET",
             "organization_members",
@@ -125,9 +121,7 @@ class MeetFlowRepository:
         )
         return rows[0] if rows else None
 
-    async def list_departments(
-        self, organization_id: UUID
-    ) -> list[dict[str, Any]]:
+    async def list_departments(self, organization_id: UUID) -> list[dict[str, Any]]:
         rows, _ = await self.client.request(
             "GET",
             "departments",
@@ -440,9 +434,7 @@ class MeetFlowRepository:
         )
 
     async def create_meeting_file(self, values: dict[str, Any]) -> dict[str, Any]:
-        await self.client.request(
-            "POST", "meeting_files", json=values, prefer="return=minimal"
-        )
+        await self.client.request("POST", "meeting_files", json=values, prefer="return=minimal")
         file = await self.get_meeting_file(UUID(values["id"]))
         if file is None:
             raise AppError(502, "FILE_CREATE_INCONSISTENT", "파일 정보를 확인할 수 없습니다.")
@@ -456,6 +448,7 @@ class MeetFlowRepository:
                 "select": (
                     "id,meeting_id,uploaded_by,storage_bucket,storage_path,original_name,"
                     "mime_type,size_bytes,sha256,processing_status,error_code,created_at"
+                    ",requested_stt_provider"
                 ),
                 "id": f"eq.{file_id}",
             },
@@ -470,6 +463,7 @@ class MeetFlowRepository:
                 "select": (
                     "id,meeting_id,uploaded_by,storage_bucket,storage_path,original_name,"
                     "mime_type,size_bytes,sha256,processing_status,error_code,created_at"
+                    ",requested_stt_provider"
                 ),
                 "meeting_id": f"eq.{meeting_id}",
                 "order": "created_at.desc",
@@ -477,9 +471,7 @@ class MeetFlowRepository:
         )
         return rows
 
-    async def update_meeting_file(
-        self, file_id: UUID, values: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def update_meeting_file(self, file_id: UUID, values: dict[str, Any]) -> dict[str, Any]:
         await self.client.request(
             "PATCH",
             "meeting_files",
@@ -548,9 +540,7 @@ class MeetFlowRepository:
             prefer="return=minimal",
         )
 
-    async def list_transcript_speakers(
-        self, transcript_id: UUID | None
-    ) -> list[dict[str, Any]]:
+    async def list_transcript_speakers(self, transcript_id: UUID | None) -> list[dict[str, Any]]:
         if transcript_id is None:
             return []
         rows, _ = await self.client.request(
@@ -564,27 +554,21 @@ class MeetFlowRepository:
         )
         return rows
 
-    async def list_transcript_segments(
-        self, transcript_id: UUID | None
-    ) -> list[dict[str, Any]]:
+    async def list_transcript_segments(self, transcript_id: UUID | None) -> list[dict[str, Any]]:
         if transcript_id is None:
             return []
         rows, _ = await self.client.request(
             "GET",
             "transcript_segments",
             params={
-                "select": (
-                    "id,speaker_id,segment_index,start_seconds,end_seconds,original_text"
-                ),
+                "select": ("id,speaker_id,segment_index,start_seconds,end_seconds,original_text"),
                 "transcript_id": f"eq.{transcript_id}",
                 "order": "segment_index.asc",
             },
         )
         return rows
 
-    async def update_transcript_speaker(
-        self, speaker_id: UUID, display_name: str
-    ) -> None:
+    async def update_transcript_speaker(self, speaker_id: UUID, display_name: str) -> None:
         await self.client.request(
             "PATCH",
             "transcript_speakers",
@@ -654,9 +638,17 @@ class MeetFlowRepository:
         )
         return [UUID(row["user_id"]) for row in rows]
 
-    async def list_shared_meeting_ids(
-        self, user_id: UUID, meeting_ids: set[UUID]
-    ) -> set[UUID]:
+    async def replace_meeting_shares(
+        self, meeting_id: UUID, shared_by: UUID, shares: list[dict[str, Any]]
+    ) -> None:
+        del shared_by
+        await self.client.request(
+            "POST",
+            "rpc/replace_meeting_shares",
+            json={"target_meeting_id": str(meeting_id), "target_shares": shares},
+        )
+
+    async def list_shared_meeting_ids(self, user_id: UUID, meeting_ids: set[UUID]) -> set[UUID]:
         if not meeting_ids:
             return set()
         ids = ",".join(str(meeting_id) for meeting_id in meeting_ids)
@@ -670,3 +662,35 @@ class MeetFlowRepository:
             },
         )
         return {UUID(row["meeting_id"]) for row in rows}
+
+    async def create_invitation(self, values: dict[str, Any]) -> dict[str, Any]:
+        await self.client.request("POST", "team_invitations", json=values, prefer="return=minimal")
+        rows, _ = await self.client.request(
+            "GET",
+            "team_invitations",
+            params={
+                "select": "id,team_id,email_normalized,role,expires_at",
+                "id": f"eq.{values['id']}",
+            },
+        )
+        return rows[0]
+
+    async def accept_invitation(self, token_hash: str) -> UUID:
+        value, _ = await self.client.request(
+            "POST", "rpc/accept_team_invitation", json={"target_token_hash": token_hash}
+        )
+        return UUID(str(value))
+
+    async def cancel_invitation(self, team_id: UUID, invitation_id: UUID) -> bool:
+        value, _ = await self.client.request(
+            "POST",
+            "rpc/cancel_team_invitation",
+            json={"target_team_id": str(team_id), "target_invitation_id": str(invitation_id)},
+        )
+        return bool(value)
+
+    async def decline_invitation(self, token_hash: str) -> bool:
+        value, _ = await self.client.request(
+            "POST", "rpc/decline_team_invitation", json={"target_token_hash": token_hash}
+        )
+        return bool(value)

@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/shared/app-layout";
 import { ActionsPage } from "@/pages/actions-page";
 import { LoginPage } from "@/pages/login-page";
+import { InvitationPage } from "@/pages/invitation-page";
 import { MeetingDetailPage } from "@/pages/meeting-detail-page";
 import { MeetingNewPage } from "@/pages/meeting-new-page";
 import { MeetingsPage } from "@/pages/meetings-page";
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
     children: [
       { path: "/teams", element: <TeamsPage /> },
       { path: "/teams/new", element: <TeamNewPage /> },
+      { path: "/invitations/:token", element: <InvitationPage /> },
       { path: "/organizations", element: <OrganizationsPage /> },
       {
         element: <AppLayout />,

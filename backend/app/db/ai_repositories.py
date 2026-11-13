@@ -7,7 +7,7 @@ from app.db.client import SupabaseRestClient
 
 JOB_SELECT = (
     "id,meeting_id,file_id,job_type,status,attempt_count,error_code,error_message_safe,"
-    "usage,started_at,finished_at,created_at,updated_at"
+    "usage,requested_provider,worker_id,lease_expires_at,started_at,finished_at,created_at,updated_at"
 )
 
 
@@ -16,7 +16,12 @@ class AIRepository:
         self.client = client
 
     async def create_job(
-        self, meeting_id: UUID, *, job_type: str = "analyze", file_id: UUID | None = None
+        self,
+        meeting_id: UUID,
+        *,
+        job_type: str = "analyze",
+        file_id: UUID | None = None,
+        requested_provider: str | None = None,
     ) -> dict[str, Any]:
         job_id = uuid4()
         await self.client.request(
@@ -29,6 +34,7 @@ class AIRepository:
                 "file_id": str(file_id) if file_id else None,
                 "status": "queued",
                 "attempt_count": 0,
+                "requested_provider": requested_provider,
             },
             prefer="return=minimal",
         )

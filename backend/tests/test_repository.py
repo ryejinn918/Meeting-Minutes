@@ -36,7 +36,7 @@ async def test_create_team_derives_creator_from_service_user() -> None:
     assert UUID(client.calls[0]["json"]["id"])
     assert client.calls[0]["prefer"] == "return=minimal"
     assert client.calls[1]["method"] == "GET"
-    assert client.calls[1]["params"]["id"] == f'eq.{client.calls[0]["json"]["id"]}'
+    assert client.calls[1]["params"]["id"] == f"eq.{client.calls[0]['json']['id']}"
 
 
 @pytest.mark.asyncio
@@ -102,9 +102,7 @@ async def test_analyzed_action_items_include_current_run_and_manual_items() -> N
     await repository.list_action_items(meeting_id, run_id)
 
     params = client.calls[0]["params"]
-    assert params["or"] == (
-        f"(source_run_id.eq.{run_id},source_run_id.is.null)"
-    )
+    assert params["or"] == (f"(source_run_id.eq.{run_id},source_run_id.is.null)")
     assert "source_run_id" not in params
 
 
@@ -149,18 +147,14 @@ async def test_scoped_team_insert_sends_both_scope_ids() -> None:
 @pytest.mark.asyncio
 async def test_soft_delete_uses_atomic_rpc() -> None:
     class DeleteClient:
-        async def request(
-            self, method: str, path: str, **kwargs: Any
-        ) -> tuple[Any, dict]:
+        async def request(self, method: str, path: str, **kwargs: Any) -> tuple[Any, dict]:
             assert method == "POST"
             assert path == "rpc/soft_delete_meeting"
             assert kwargs["json"]["expected_version"] == 3
             return "deleted", {}
 
     repository = MeetFlowRepository(DeleteClient())  # type: ignore[arg-type]
-    result = await repository.soft_delete_meeting(
-        UUID("33333333-3333-4333-8333-333333333333"), 3
-    )
+    result = await repository.soft_delete_meeting(UUID("33333333-3333-4333-8333-333333333333"), 3)
 
     assert result == "deleted"
 
@@ -173,8 +167,6 @@ async def test_soft_delete_rejects_invalid_rpc_response() -> None:
 
     repository = MeetFlowRepository(InvalidDeleteClient())  # type: ignore[arg-type]
     with pytest.raises(AppError) as error:
-        await repository.soft_delete_meeting(
-            UUID("33333333-3333-4333-8333-333333333333"), 1
-        )
+        await repository.soft_delete_meeting(UUID("33333333-3333-4333-8333-333333333333"), 1)
 
     assert error.value.code == "MEETING_DELETE_RESPONSE_INVALID"

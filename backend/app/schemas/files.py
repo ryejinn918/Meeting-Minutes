@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 FileKind = Literal["audio", "document"]
 FileStatus = Literal["pending_upload", "uploaded", "processing", "succeeded", "failed"]
+STTProviderChoice = Literal["openai", "whisperx"]
 
 
 class UploadUrlRequest(BaseModel):
@@ -13,6 +14,7 @@ class UploadUrlRequest(BaseModel):
     content_type: str = Field(min_length=1, max_length=100)
     size_bytes: int = Field(gt=0, le=104_857_600)
     sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    stt_provider: STTProviderChoice = "openai"
 
     @field_validator("filename")
     @classmethod
@@ -37,6 +39,7 @@ class MeetingFileResponse(BaseModel):
     processing_status: FileStatus
     error_code: str | None = None
     created_at: datetime
+    requested_stt_provider: STTProviderChoice = "openai"
 
 
 class UploadUrlResponse(BaseModel):
@@ -51,3 +54,4 @@ class FileCompleteResponse(BaseModel):
     file: MeetingFileResponse
     job_id: UUID
     job_type: Literal["extract", "transcribe"]
+    requested_provider: STTProviderChoice | None = None

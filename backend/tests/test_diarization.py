@@ -43,6 +43,4 @@ def test_overlapping_duplicate_segment_is_removed_and_timestamps_formatted() -> 
     labels = speaker_labels(merged)
 
     assert len(merged) == 1
-    assert format_diarized_transcript(merged, labels) == (
-        "[00:09:58] 화자 1: 중복 발언입니다"
-    )
+    assert format_diarized_transcript(merged, labels) == ("[00:09:58] 화자 1: 중복 발언입니다")

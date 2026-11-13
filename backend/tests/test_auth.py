@@ -29,9 +29,7 @@ def test_protected_endpoint_requires_bearer_token() -> None:
 
 
 def test_analysis_endpoint_requires_bearer_token() -> None:
-    response = TestClient(app).post(
-        "/api/v1/meetings/33333333-3333-4333-8333-333333333333/process"
-    )
+    response = TestClient(app).post("/api/v1/meetings/33333333-3333-4333-8333-333333333333/process")
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"

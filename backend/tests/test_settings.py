@@ -36,6 +36,11 @@ def test_chunk_overlap_must_be_smaller_than_duration() -> None:
         Settings(_env_file=None, stt_chunk_seconds=10, stt_chunk_overlap_seconds=10)
 
 
+def test_worker_token_hashes_must_be_sha256_hex() -> None:
+    with pytest.raises(ValidationError, match="SHA-256"):
+        Settings(_env_file=None, gpu_worker_token_hashes="not-a-digest")
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -46,8 +51,6 @@ def test_chunk_overlap_must_be_smaller_than_duration() -> None:
         ({"supabase_secret_key": ""}, "SUPABASE_SECRET_KEY"),
     ],
 )
-def test_invalid_production_settings_fail_fast(
-    overrides: dict[str, str], message: str
-) -> None:
+def test_invalid_production_settings_fail_fast(overrides: dict[str, str], message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         production_settings(**overrides)

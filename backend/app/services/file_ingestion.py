@@ -122,9 +122,7 @@ class FileIngestionService:
                 "선택한 입력 방식과 파일 형식이 일치하지 않습니다.",
             )
         file_id = uuid4()
-        storage_path = (
-            f"{meeting['team_id']}/{meeting_id}/{file_id}/source{extension}"
-        )
+        storage_path = f"{meeting['team_id']}/{meeting_id}/{file_id}/source{extension}"
         try:
             file = await self.user_repository.create_meeting_file(
                 {
@@ -138,6 +136,9 @@ class FileIngestionService:
                     "size_bytes": payload.size_bytes,
                     "sha256": payload.sha256,
                     "processing_status": "pending_upload",
+                    "requested_stt_provider": payload.stt_provider
+                    if source_type == "audio"
+                    else "openai",
                 }
             )
         except AppError as exc:
@@ -170,9 +171,7 @@ class FileIngestionService:
             signed_url=signed_url,
         )
 
-    async def complete(
-        self, meeting_id: UUID, file_id: UUID
-    ) -> FileCompleteResponse:
+    async def complete(self, meeting_id: UUID, file_id: UUID) -> FileCompleteResponse:
         meeting = await self._require_manager(meeting_id)
         file = await self.user_repository.get_meeting_file(file_id)
         if file is None or UUID(file["meeting_id"]) != meeting_id:
@@ -192,9 +191,7 @@ class FileIngestionService:
         except AppError as exc:
             if exc.code in INVALID_UPLOAD_OBJECT_CODES:
                 try:
-                    await self.storage.delete(
-                        file["storage_bucket"], file["storage_path"]
-                    )
+                    await self.storage.delete(file["storage_bucket"], file["storage_path"])
                 except AppError:
                     pass
             await self.user_repository.update_meeting_file(
@@ -216,7 +213,14 @@ class FileIngestionService:
         )
         try:
             job = await self.admin_job_repository.create_job(
-                meeting_id, job_type=validated.job_type, file_id=file_id
+                meeting_id,
+                job_type=validated.job_type,
+                file_id=file_id,
+                requested_provider=(
+                    file.get("requested_stt_provider")
+                    if validated.job_type == "transcribe"
+                    else None
+                ),
             )
         except AppError as exc:
             if exc.details and exc.details.get("upstream_code") == "23505":
@@ -231,6 +235,7 @@ class FileIngestionService:
             file=self._file_response(file),
             job_id=job["id"],
             job_type=job["job_type"],
+            requested_provider=job.get("requested_provider"),
         )
 
     async def list_files(self, meeting_id: UUID) -> list[MeetingFileResponse]:
@@ -260,6 +265,9 @@ class FileIngestionService:
             job_id,
             {
                 "status": "queued",
+                "attempt_count": 0
+                if job.get("error_code") == "WORKER_LEASE_EXHAUSTED"
+                else job.get("attempt_count", 0),
                 "error_code": None,
                 "error_message_safe": None,
                 "started_at": None,
@@ -268,6 +276,9 @@ class FileIngestionService:
         )
         await self._set_meeting_status(meeting, "uploaded")
         return self._job_response(updated)
+
+    def should_run_locally(self, job: JobResponse) -> bool:
+        return job.requested_provider != "whisperx"
 
     async def run(self, job_id: UUID) -> None:
         job = await self.admin_job_repository.get_job(job_id)
@@ -325,9 +336,7 @@ class FileIngestionService:
                     "source_size_bytes": int(file["size_bytes"]),
                 }
                 if job["job_type"] == "transcribe":
-                    result, stt_usage = await self._transcribe_audio(
-                        job_id, source, file, temp_dir
-                    )
+                    result, stt_usage = await self._transcribe_audio(job_id, source, file, temp_dir)
                     text = result.text
                     language = result.language
                     provider = result.provider
@@ -478,6 +487,8 @@ class FileIngestionService:
         )
 
     def _is_retryable(self, job: dict[str, Any]) -> bool:
+        if job.get("status") == "failed" and job.get("error_code") == "WORKER_LEASE_EXHAUSTED":
+            return True
         if int(job.get("attempt_count", 0)) >= 2:
             return False
         if job.get("status") == "failed":
@@ -492,9 +503,7 @@ class FileIngestionService:
             return elapsed > self.settings.ai_stale_job_seconds
         return False
 
-    async def _validate_downloaded_file(
-        self, source: Path, file: dict[str, Any]
-    ) -> Any:
+    async def _validate_downloaded_file(self, source: Path, file: dict[str, Any]) -> Any:
         return await asyncio.to_thread(
             validate_file_path,
             source,
@@ -526,8 +535,7 @@ class FileIngestionService:
                 timeout_seconds=self.settings.ffmpeg_timeout_seconds,
             )
             logger.info(
-                "stt_audio_probe_completed job_id=%s audio_seconds=%.3f "
-                "elapsed_seconds=%.3f",
+                "stt_audio_probe_completed job_id=%s audio_seconds=%.3f elapsed_seconds=%.3f",
                 job_id,
                 duration,
                 time.perf_counter() - probe_started,
@@ -546,9 +554,7 @@ class FileIngestionService:
                     content_type=file["mime_type"],
                     duration_seconds=duration,
                 )
-                result = self._with_diarization(
-                    result, chunk_index=0, offset_seconds=0
-                )
+                result = self._with_diarization(result, chunk_index=0, offset_seconds=0)
                 usage = {
                     "chunk_count": 1,
                     "processed_audio_bytes": len(content),
@@ -597,8 +603,7 @@ class FileIngestionService:
             previous = cached.get(chunk.index)
             if previous and previous.get("chunk_sha256") == chunk_hash:
                 logger.info(
-                    "stt_chunk_reused job_id=%s chunk_index=%s chunk_count=%s "
-                    "audio_seconds=%.3f",
+                    "stt_chunk_reused job_id=%s chunk_index=%s chunk_count=%s audio_seconds=%.3f",
                     job_id,
                     chunk.index,
                     len(split.chunks),
@@ -650,8 +655,7 @@ class FileIngestionService:
                 usage=chunk_usage,
             )
             logger.info(
-                "stt_chunk_completed job_id=%s chunk_index=%s chunk_count=%s "
-                "elapsed_seconds=%.3f",
+                "stt_chunk_completed job_id=%s chunk_index=%s chunk_count=%s elapsed_seconds=%.3f",
                 job_id,
                 chunk.index,
                 len(split.chunks),
@@ -693,9 +697,7 @@ class FileIngestionService:
                     for item in diarized
                 ),
                 speaker_labels=labels,
-                provider_speakers={
-                    item.speaker_key: item.provider_speaker for item in diarized
-                },
+                provider_speakers={item.speaker_key: item.provider_speaker for item in diarized},
             ),
             {
                 "chunk_count": len(split.chunks),
@@ -734,9 +736,7 @@ class FileIngestionService:
                 for item in diarized
             ),
             speaker_labels=labels,
-            provider_speakers={
-                item.speaker_key: item.provider_speaker for item in diarized
-            },
+            provider_speakers={item.speaker_key: item.provider_speaker for item in diarized},
         )
 
     @staticmethod
@@ -758,6 +758,7 @@ class FileIngestionService:
             processing_status=file["processing_status"],
             error_code=file.get("error_code"),
             created_at=file["created_at"],
+            requested_stt_provider=file.get("requested_stt_provider", "openai"),
         )
 
     def _job_response(self, job: dict[str, Any]) -> JobResponse:
@@ -773,4 +774,5 @@ class FileIngestionService:
             started_at=job.get("started_at"),
             finished_at=job.get("finished_at"),
             created_at=job["created_at"],
+            requested_provider=job.get("requested_provider"),
         )

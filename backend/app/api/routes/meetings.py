@@ -14,6 +14,7 @@ from app.schemas.meetings import (
     TranscriptSpeakerUpdate,
     TranscriptUpsert,
 )
+from app.schemas.sharing import MeetingSharesUpdate
 from app.services.meetings import MeetingService
 
 router = APIRouter(prefix="/meetings")
@@ -91,3 +92,10 @@ async def update_notes(
     service: MeetingService = Depends(get_service),
 ) -> MeetingResponse:
     return await service.update_notes(meeting_id, payload)
+
+
+@router.put("/{meeting_id}/shares", response_model=MeetingResponse)
+async def replace_shares(
+    meeting_id: UUID, payload: MeetingSharesUpdate, service: MeetingService = Depends(get_service)
+) -> MeetingResponse:
+    return await service.replace_shares(meeting_id, payload)

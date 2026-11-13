@@ -54,5 +54,6 @@ async def retry_job(
         background_tasks.add_task(service.run, job.id)
     else:
         job = await file_service.retry(job_id)
-        background_tasks.add_task(file_service.run, job.id)
+        if file_service.should_run_locally(job):
+            background_tasks.add_task(file_service.run, job.id)
     return job

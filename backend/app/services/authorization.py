@@ -17,9 +17,7 @@ class AuthorizationService:
             raise AppError(403, "TEAM_ACCESS_DENIED", "이 팀에 접근할 권한이 없습니다.")
         return membership
 
-    async def require_organization_member(
-        self, organization_id: UUID
-    ) -> dict[str, Any]:
+    async def require_organization_member(self, organization_id: UUID) -> dict[str, Any]:
         membership = await self.repository.get_organization_membership(
             organization_id, self.user.id
         )
@@ -31,9 +29,7 @@ class AuthorizationService:
             )
         return membership
 
-    async def require_organization_admin(
-        self, organization_id: UUID
-    ) -> dict[str, Any]:
+    async def require_organization_admin(self, organization_id: UUID) -> dict[str, Any]:
         membership = await self.require_organization_member(organization_id)
         if membership["role"] != "org_admin":
             raise AppError(
@@ -43,12 +39,8 @@ class AuthorizationService:
             )
         return membership
 
-    async def require_department_admin(
-        self, department_id: UUID
-    ) -> dict[str, Any]:
-        membership = await self.repository.get_department_membership(
-            department_id, self.user.id
-        )
+    async def require_department_admin(self, department_id: UUID) -> dict[str, Any]:
+        membership = await self.repository.get_department_membership(department_id, self.user.id)
         if membership is None or membership["role"] != "department_admin":
             raise AppError(
                 403,

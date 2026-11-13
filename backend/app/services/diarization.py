@@ -53,7 +53,7 @@ def speaker_labels(
     for segment in segments:
         if segment.speaker_key in labels:
             continue
-        if segment.provider_speaker == "unknown":
+        if segment.provider_speaker.casefold() == "unknown":
             unknown += 1
             labels[segment.speaker_key] = f"알 수 없는 화자 {unknown}"
         else:
@@ -67,8 +67,7 @@ def format_diarized_transcript(
     labels: dict[str, str],
 ) -> str:
     return "\n\n".join(
-        f"[{format_timestamp(segment.start)}] "
-        f"{labels[segment.speaker_key]}: {segment.text}"
+        f"[{format_timestamp(segment.start)}] {labels[segment.speaker_key]}: {segment.text}"
         for segment in segments
     )
 
@@ -134,15 +133,9 @@ def _is_duplicate_overlap(
         if existing.end < candidate.start:
             break
         existing_text = _normalize_text(existing.text)
-        if (
-            candidate_text == existing_text
-            or (
-                min(len(candidate_text), len(existing_text)) >= 12
-                and (
-                    candidate_text in existing_text
-                    or existing_text in candidate_text
-                )
-            )
+        if candidate_text == existing_text or (
+            min(len(candidate_text), len(existing_text)) >= 12
+            and (candidate_text in existing_text or existing_text in candidate_text)
         ):
             return True
     return False

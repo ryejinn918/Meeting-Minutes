@@ -10,9 +10,7 @@ from app.core.settings import Settings
 
 
 class SupabaseStorageClient:
-    def __init__(
-        self, settings: Settings, http_client: httpx.AsyncClient | None = None
-    ) -> None:
+    def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
         self.base_url = settings.supabase_storage_url.rstrip("/")
         self.http_client = http_client
         self.headers = {"apikey": settings.supabase_secret_key}
@@ -30,10 +28,19 @@ class SupabaseStorageClient:
         signed_url = urljoin(f"{self.base_url}/", data["url"].lstrip("/"))
         token = parse_qs(urlparse(signed_url).query).get("token", [None])[0]
         if not token:
-            raise AppError(
-                502, "STORAGE_RESPONSE_ERROR", "파일 업로드 주소를 만들지 못했습니다."
-            )
+            raise AppError(502, "STORAGE_RESPONSE_ERROR", "파일 업로드 주소를 만들지 못했습니다.")
         return signed_url, token
+
+    async def create_signed_download(self, bucket: str, path: str, expires_in: int) -> str:
+        data = await self._request(
+            "POST",
+            f"object/sign/{quote(bucket, safe='')}/{quote(path, safe='/')}",
+            json={"expiresIn": expires_in},
+        )
+        signed = data.get("signedURL") or data.get("signedUrl") if isinstance(data, dict) else None
+        if not isinstance(signed, str):
+            raise AppError(502, "STORAGE_RESPONSE_ERROR", "다운로드 주소를 만들지 못했습니다.")
+        return urljoin(f"{self.base_url}/", signed.lstrip("/"))
 
     async def download(self, bucket: str, path: str) -> bytes:
         data = await self._request(
@@ -53,17 +60,12 @@ class SupabaseStorageClient:
         *,
         max_bytes: int,
     ) -> int:
-        url = (
-            f"{self.base_url}/object/{quote(bucket, safe='')}/"
-            f"{quote(path, safe='/')}"
-        )
+        url = f"{self.base_url}/object/{quote(bucket, safe='')}/{quote(path, safe='/')}"
         downloaded = 0
         try:
             client = self.http_client or httpx.AsyncClient()
             try:
-                async with client.stream(
-                    "GET", url, headers=self.headers, timeout=60
-                ) as response:
+                async with client.stream("GET", url, headers=self.headers, timeout=60) as response:
                     if response.status_code >= 400:
                         details: dict[str, Any] = {
                             "operation": "GET",

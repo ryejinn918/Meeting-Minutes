@@ -41,9 +41,7 @@ class FileRepository:
     async def create_meeting_file(self, values: dict[str, Any]) -> dict[str, Any]:
         return {**values, "created_at": datetime.now(UTC).isoformat()}
 
-    async def update_meeting_file(
-        self, file_id: UUID, values: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def update_meeting_file(self, file_id: UUID, values: dict[str, Any]) -> dict[str, Any]:
         self.updated = values
         return {"id": str(file_id), **values}
 
@@ -127,9 +125,7 @@ async def test_storage_sign_failure_releases_duplicate_hash_for_retry() -> None:
     repository = FileRepository()
 
     with pytest.raises(AppError) as error:
-        await service(repository, FailingStorage()).create_upload_url(
-            MEETING_ID, upload_payload()
-        )
+        await service(repository, FailingStorage()).create_upload_url(MEETING_ID, upload_payload())
 
     assert error.value.code == "STORAGE_ERROR"
     assert repository.updated == {
@@ -169,6 +165,17 @@ def test_stale_queued_file_job_can_be_retried() -> None:
         "status": "queued",
         "attempt_count": 0,
         "created_at": (datetime.now(UTC) - timedelta(minutes=10)).isoformat(),
+    }
+
+    assert file_service._is_retryable(job) is True
+
+
+def test_exhausted_gpu_lease_can_be_manually_retried() -> None:
+    file_service = service(FileRepository(), SuccessfulStorage())
+    job = {
+        "status": "failed",
+        "attempt_count": 2,
+        "error_code": "WORKER_LEASE_EXHAUSTED",
     }
 
     assert file_service._is_retryable(job) is True
@@ -441,9 +448,7 @@ async def test_stt_timeout_marks_job_file_and_meeting_failed(
             assert requested == job_id
             return self.job
 
-        async def update_job(
-            self, requested: UUID, values: dict[str, Any]
-        ) -> dict[str, Any]:
+        async def update_job(self, requested: UUID, values: dict[str, Any]) -> dict[str, Any]:
             assert requested == job_id
             self.job.update(values)
             return self.job

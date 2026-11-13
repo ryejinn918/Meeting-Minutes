@@ -86,9 +86,7 @@ class PartialTranscriptRepository:
     async def list_shared_member_ids(self, meeting_id: UUID) -> list[UUID]:
         return []
 
-    async def list_transcript_speakers(
-        self, transcript_id: UUID | None
-    ) -> list[dict[str, Any]]:
+    async def list_transcript_speakers(self, transcript_id: UUID | None) -> list[dict[str, Any]]:
         if transcript_id != TRANSCRIPT_ID:
             return []
         return [
@@ -100,14 +98,10 @@ class PartialTranscriptRepository:
             }
         ]
 
-    async def list_transcript_segments(
-        self, transcript_id: UUID | None
-    ) -> list[dict[str, Any]]:
+    async def list_transcript_segments(self, transcript_id: UUID | None) -> list[dict[str, Any]]:
         return []
 
-    async def update_transcript_speaker(
-        self, speaker_id: UUID, display_name: str
-    ) -> None:
+    async def update_transcript_speaker(self, speaker_id: UUID, display_name: str) -> None:
         assert speaker_id == SPEAKER_ID
         assert display_name == "김민지"
 
@@ -158,9 +152,7 @@ async def test_meeting_list_does_not_hydrate_card_rows() -> None:
         async def get_transcript(self, transcript_id: UUID | None) -> dict[str, Any] | None:
             raise AssertionError("meeting cards must not load transcript details")
 
-        async def list_shared_meeting_ids(
-            self, user_id: UUID, meeting_ids: set[UUID]
-        ) -> set[UUID]:
+        async def list_shared_meeting_ids(self, user_id: UUID, meeting_ids: set[UUID]) -> set[UUID]:
             return set()
 
     repository = ListRepository()

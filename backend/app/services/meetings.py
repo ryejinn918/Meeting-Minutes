@@ -19,6 +19,7 @@ from app.schemas.meetings import (
     UserSummary,
     normalize_items,
 )
+from app.schemas.sharing import MeetingSharesUpdate
 from app.services.authorization import AuthorizationService
 
 
@@ -69,6 +70,30 @@ class MeetingService:
                 UUID(meeting["id"]),
                 [item.model_dump(mode="json", exclude_none=True) for item in payload.attendees],
             )
+        return await self._hydrate(meeting)
+
+    async def replace_shares(
+        self, meeting_id: UUID, payload: MeetingSharesUpdate
+    ) -> MeetingResponse:
+        meeting = await self.repository.get_meeting(meeting_id)
+        if meeting is None:
+            raise AppError(404, "MEETING_NOT_FOUND", "회의록을 찾을 수 없습니다.")
+        await self.authorization.require_meeting_manager(meeting)
+        seen: set[UUID] = set()
+        shares: list[dict[str, object]] = []
+        for item in payload.shares:
+            if item.user_id == self.user.id or item.user_id in seen:
+                raise AppError(422, "SHARE_TARGET_INVALID", "공유 대상을 확인해 주세요.")
+            membership = await self.repository.get_membership(
+                UUID(meeting["team_id"]), item.user_id
+            )
+            if membership is None:
+                raise AppError(
+                    403, "SHARE_TARGET_DENIED", "같은 팀의 활성 구성원만 선택할 수 있습니다."
+                )
+            seen.add(item.user_id)
+            shares.append(item.model_dump())
+        await self.repository.replace_meeting_shares(meeting_id, self.user.id, shares)
         return await self._hydrate(meeting)
 
     async def list(self, team_id: UUID) -> list[MeetingListItemResponse]:

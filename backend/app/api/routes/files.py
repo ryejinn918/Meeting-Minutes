@@ -39,7 +39,8 @@ async def complete_upload(
     service: FileIngestionService = Depends(get_file_ingestion_service),
 ) -> FileCompleteResponse:
     result = await service.complete(meeting_id, file_id)
-    background_tasks.add_task(service.run, result.job_id)
+    if result.requested_provider != "whisperx":
+        background_tasks.add_task(service.run, result.job_id)
     return result
 
 

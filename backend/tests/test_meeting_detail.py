@@ -95,14 +95,10 @@ class DetailRepository:
     async def list_shared_member_ids(self, meeting_id: UUID) -> list[UUID]:
         return []
 
-    async def list_transcript_speakers(
-        self, transcript_id: UUID | None
-    ) -> list[dict[str, Any]]:
+    async def list_transcript_speakers(self, transcript_id: UUID | None) -> list[dict[str, Any]]:
         return []
 
-    async def list_transcript_segments(
-        self, transcript_id: UUID | None
-    ) -> list[dict[str, Any]]:
+    async def list_transcript_segments(self, transcript_id: UUID | None) -> list[dict[str, Any]]:
         return []
 
 

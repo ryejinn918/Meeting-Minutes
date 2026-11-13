@@ -19,6 +19,14 @@ MVP에서 제외한다.
 
 ## 1. 전체 시스템 아키텍처
 
+Phase C에서는 OpenAI STT를 기본 경로로 유지한다. 사용자가 명시적으로 WhisperX를 선택한 경우에만 Windows RTX 4090 워커가 Render의 전용 인증 API를 아웃바운드 HTTPS로 폴링한다. 작업 claim은 lease/heartbeat로 보호하고, 파일은 짧은 signed URL로 전달하며, 워커에는 Supabase secret/service-role 키를 저장하지 않는다. 워커가 오프라인이면 작업은 대기하며 OpenAI로 자동 전환하지 않는다.
+
+워커 인증 원문 토큰은 Windows 워커에만 보관하고 Render에는 SHA-256 hex digest만 등록한다. 회전 시에는 새 digest와 기존 digest를 짧은 기간 함께 허용한 뒤 워커를 새 토큰으로 전환하고 기존 digest를 제거한다. claim/heartbeat/완료/실패 RPC는 현재 worker ID와 만료되지 않은 lease를 확인한다. 완료 제출은 transcript·화자·발언·회의·파일·작업 상태를 한 DB transaction에서 저장하며 `result_transcript_id`로 동일 결과 제출을 멱등 처리한다.
+
+팀 초대는 원문 토큰을 저장하지 않고 hash·만료·로그인 이메일을 검증한다. 초대 수락은 팀 소속만 추가하며 기존 비공개 회의록은 자동 공유하지 않는다. 회의 공유는 같은 팀의 명시적으로 선택된 사용자에게만 적용하고 Phase C에서도 `can_edit=false` 읽기 전용 정책을 유지한다.
+
+모바일 직접 녹음은 MediaRecorder 청크를 IndexedDB에 임시 보관하고 업로드 성공 전에는 삭제하지 않는다. 화면 잠금이나 OS 백그라운드 정책에 따른 중단 없는 녹음은 보장하지 않는다.
+
 ```text
 React/Vite PWA (Vercel)
   ├─ Supabase Auth: 이메일 가입/로그인, 세션 갱신

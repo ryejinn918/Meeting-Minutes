@@ -13,10 +13,12 @@ ALLOWED_TYPES = {
     ".mp3": {"audio/mpeg"},
     ".m4a": {"audio/mp4", "audio/x-m4a"},
     ".wav": {"audio/wav", "audio/x-wav"},
+    ".webm": {"audio/webm"},
+    ".ogg": {"audio/ogg"},
     ".txt": {"text/plain"},
     ".pdf": {"application/pdf"},
 }
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".wav"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".wav", ".webm", ".ogg"}
 DOCUMENT_EXTENSIONS = {".txt", ".pdf"}
 
 
@@ -86,6 +88,8 @@ def validate_file_bytes(
         ".m4a": len(content) >= 12 and content[4:8] == b"ftyp",
         ".mp3": content.startswith(b"ID3")
         or (len(content) >= 2 and content[0] == 0xFF and content[1] & 0xE0 == 0xE0),
+        ".webm": content.startswith(b"\x1a\x45\xdf\xa3"),
+        ".ogg": content.startswith(b"OggS"),
     }[extension]
     if not valid_signature:
         raise AppError(415, "FILE_CONTENT_INVALID", "파일 형식과 실제 내용이 일치하지 않습니다.")
@@ -131,16 +135,12 @@ def validate_file_path(
     valid_signature = {
         ".pdf": signature.startswith(b"%PDF-"),
         ".txt": b"\x00" not in signature,
-        ".wav": len(signature) >= 12
-        and signature[:4] == b"RIFF"
-        and signature[8:12] == b"WAVE",
+        ".wav": len(signature) >= 12 and signature[:4] == b"RIFF" and signature[8:12] == b"WAVE",
         ".m4a": len(signature) >= 12 and signature[4:8] == b"ftyp",
         ".mp3": signature.startswith(b"ID3")
-        or (
-            len(signature) >= 2
-            and signature[0] == 0xFF
-            and signature[1] & 0xE0 == 0xE0
-        ),
+        or (len(signature) >= 2 and signature[0] == 0xFF and signature[1] & 0xE0 == 0xE0),
+        ".webm": signature.startswith(b"\x1a\x45\xdf\xa3"),
+        ".ogg": signature.startswith(b"OggS"),
     }[extension]
     if not valid_signature:
         raise AppError(

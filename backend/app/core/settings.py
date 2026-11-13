@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 
 from pydantic import model_validator
@@ -51,6 +52,17 @@ class Settings(BaseSettings):
     ai_mode: str = "mock"
     ai_max_transcript_chars: int = 120_000
     ai_stale_job_seconds: int = 300
+    gpu_worker_token_hashes: str = ""
+    gpu_worker_lease_seconds: int = 120
+    gpu_worker_download_ttl_seconds: int = 300
+
+    @property
+    def gpu_worker_token_hash_list(self) -> list[str]:
+        return [
+            value.strip().lower()
+            for value in self.gpu_worker_token_hashes.split(",")
+            if value.strip()
+        ]
 
     @model_validator(mode="after")
     def validate_runtime_configuration(self) -> "Settings":
@@ -64,6 +76,15 @@ class Settings(BaseSettings):
             raise ValueError("OpenAI maximum timeout must be at least the base timeout")
         if self.openai_timeout_per_audio_second <= 0:
             raise ValueError("OpenAI timeout multiplier must be positive")
+        if not 30 <= self.gpu_worker_lease_seconds <= 600:
+            raise ValueError("GPU_WORKER_LEASE_SECONDS must be between 30 and 600")
+        if not 60 <= self.gpu_worker_download_ttl_seconds <= 900:
+            raise ValueError("GPU_WORKER_DOWNLOAD_TTL_SECONDS must be between 60 and 900")
+        if any(
+            not re.fullmatch(r"[0-9a-f]{64}", value)
+            for value in self.gpu_worker_token_hash_list
+        ):
+            raise ValueError("GPU_WORKER_TOKEN_HASHES must contain SHA-256 hex digests")
         if self.app_env != "production":
             return self
         required = {

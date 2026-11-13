@@ -127,8 +127,7 @@ class OpenAISTTProvider:
                     retryable=False,
                 )
             logger.info(
-                "stt_request_completed attempt=%s status=%s elapsed_seconds=%.3f "
-                "request_id=%s",
+                "stt_request_completed attempt=%s status=%s elapsed_seconds=%.3f request_id=%s",
                 attempt + 1,
                 response.status_code,
                 time.perf_counter() - started,

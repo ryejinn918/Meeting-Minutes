@@ -17,3 +17,5 @@ class JobResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime
+    requested_provider: Literal["openai", "whisperx"] | None = None
+    worker_online: bool | None = None

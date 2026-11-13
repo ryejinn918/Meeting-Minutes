@@ -63,9 +63,7 @@ async def test_non_organization_member_is_denied() -> None:
         AuthenticatedUser(id=USER_ID, email=None, access_token="token"),
     )
 
-    async def get_organization_membership(
-        organization_id: UUID, user_id: UUID
-    ) -> None:
+    async def get_organization_membership(organization_id: UUID, user_id: UUID) -> None:
         return None
 
     repository.get_organization_membership = get_organization_membership  # type: ignore[attr-defined,method-assign]

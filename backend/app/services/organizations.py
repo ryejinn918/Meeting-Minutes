@@ -28,25 +28,19 @@ class OrganizationService:
     async def list(self) -> list[OrganizationResponse]:
         memberships = await self.repository.list_organization_memberships(self.user.id)
         return [
-            OrganizationResponse(
-                **membership["organizations"], my_role=membership["role"]
-            )
+            OrganizationResponse(**membership["organizations"], my_role=membership["role"])
             for membership in memberships
         ]
 
     async def detail(self, organization_id: UUID) -> OrganizationDetailResponse:
-        membership = await self.authorization.require_organization_member(
-            organization_id
-        )
+        membership = await self.authorization.require_organization_member(organization_id)
         organization = await self.repository.get_organization(organization_id)
         if organization is None:
             raise AppError(404, "ORGANIZATION_NOT_FOUND", "조직을 찾을 수 없습니다.")
         department_memberships = await self.repository.list_department_memberships(
             self.user.id, organization_id
         )
-        roles = {
-            row["department_id"]: row["role"] for row in department_memberships
-        }
+        roles = {row["department_id"]: row["role"] for row in department_memberships}
         departments = await self.repository.list_departments(organization_id)
         return OrganizationDetailResponse(
             **organization,

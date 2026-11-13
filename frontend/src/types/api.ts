@@ -222,6 +222,8 @@ export interface ProcessingJob {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+  requested_provider: "openai" | "whisperx" | null;
+  worker_online: boolean | null;
 }
 
 export type FileProcessingStatus = "pending_upload" | "uploaded" | "processing" | "succeeded" | "failed";
@@ -235,6 +237,7 @@ export interface MeetingFile {
   processing_status: FileProcessingStatus;
   error_code: string | null;
   created_at: string;
+  requested_stt_provider: "openai" | "whisperx";
 }
 
 export interface UploadUrlResponse {
@@ -249,6 +252,7 @@ export interface FileCompleteResponse {
   file: MeetingFile;
   job_id: string;
   job_type: "extract" | "transcribe";
+  requested_provider: "openai" | "whisperx" | null;
 }
 
 export interface MockSession {

@@ -41,9 +41,7 @@ def reset_stub(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     yield
 
 
-def settings(
-    *, retries: int = 0, model: str = "gpt-transcribe"
-) -> Settings:
+def settings(*, retries: int = 0, model: str = "gpt-transcribe") -> Settings:
     return Settings(
         _env_file=None,
         openai_api_key="test-secret",
@@ -93,9 +91,9 @@ async def test_diarization_model_requests_and_parses_diarized_json() -> None:
         )
     ]
 
-    result = await OpenAISTTProvider(
-        settings(model="gpt-4o-transcribe-diarize")
-    ).transcribe(b"ID3audio", filename="meeting.mp3", content_type="audio/mpeg")
+    result = await OpenAISTTProvider(settings(model="gpt-4o-transcribe-diarize")).transcribe(
+        b"ID3audio", filename="meeting.mp3", content_type="audio/mpeg"
+    )
 
     request = StubClient.requests[0]
     assert request["data"] == {
