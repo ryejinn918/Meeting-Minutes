@@ -55,6 +55,14 @@ class OpenRouterAnalysisProvider:
             try:
                 return await self._request(messages)
             except AIProviderError as exc:
+                # Some OpenRouter models reject strict JSON Schema while still
+                # supporting JSON mode. Fall back once; the response is still
+                # validated by MeetingAnalysis below.
+                if exc.code == "AI_REQUEST_REJECTED":
+                    try:
+                        return await self._request(messages, json_schema=False)
+                    except AIProviderError:
+                        pass
                 last_error = exc
                 if not exc.retryable or attempt + 1 >= total_attempts:
                     raise
@@ -190,20 +198,26 @@ class OpenRouterAnalysisProvider:
                 "AI_INVALID_RESPONSE", "AI 응답 형식이 올바르지 않습니다.", retryable=True
             ) from exc
 
-    async def _request(self, messages: list[dict[str, str]]) -> AnalysisResult:
+    async def _request(
+        self, messages: list[dict[str, str]], *, json_schema: bool = True
+    ) -> AnalysisResult:
         payload = {
             "model": self.settings.openrouter_analysis_model,
             "messages": messages,
             "temperature": 0.1,
             "max_tokens": self.settings.openrouter_max_output_tokens,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "meeting_analysis",
-                    "strict": True,
-                    "schema": MeetingAnalysis.model_json_schema(),
-                },
-            },
+            "response_format": (
+                {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "meeting_analysis",
+                        "strict": True,
+                        "schema": MeetingAnalysis.model_json_schema(),
+                    },
+                }
+                if json_schema
+                else {"type": "json_object"}
+            ),
         }
         headers = {
             "Authorization": f"Bearer {self.settings.openrouter_api_key}",

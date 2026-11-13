@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -7,7 +8,8 @@ from app.db.client import SupabaseRestClient
 MEETING_SELECT = (
     "id,team_id,title,meeting_at,source_type,created_by,processing_status,"
     "current_transcript_id,current_notes_id,version,topic,location,meeting_type,"
-    "purpose,project_name,template_id,metadata_confirmed_at"
+    "purpose,project_name,template_id,metadata_confirmed_at,review_status,"
+    "approved_at,approved_by,approval_version"
 )
 
 
@@ -547,7 +549,10 @@ class MeetFlowRepository:
             "GET",
             "transcript_speakers",
             params={
-                "select": "id,speaker_key,provider_label,display_name",
+                "select": (
+                    "id,speaker_key,provider_label,display_name,candidate_user_id,"
+                    "candidate_confidence,candidate_reason,confirmed_at"
+                ),
                 "transcript_id": f"eq.{transcript_id}",
                 "order": "created_at.asc",
             },
@@ -568,12 +573,18 @@ class MeetFlowRepository:
         )
         return rows
 
-    async def update_transcript_speaker(self, speaker_id: UUID, display_name: str) -> None:
+    async def update_transcript_speaker(
+        self, speaker_id: UUID, display_name: str, confirmed_by: UUID | None = None
+    ) -> None:
         await self.client.request(
             "PATCH",
             "transcript_speakers",
             params={"id": f"eq.{speaker_id}"},
-            json={"display_name": display_name},
+            json={
+                "display_name": display_name,
+                "confirmed_at": datetime.now(UTC).isoformat() if confirmed_by else None,
+                "confirmed_by": str(confirmed_by) if confirmed_by else None,
+            },
             prefer="return=minimal",
         )
 

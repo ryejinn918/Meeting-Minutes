@@ -238,7 +238,11 @@ class AnalysisService:
             updated = await self.admin_repository.update_meeting(
                 meeting_id,
                 latest["version"],
-                {"current_notes_id": str(notes_id), "processing_status": "ready"},
+                {
+                    "current_notes_id": str(notes_id),
+                    "processing_status": "ready",
+                    "review_status": "review_required",
+                },
             )
             if updated is None:
                 raise AppError(409, "MEETING_VERSION_CONFLICT", "회의록 상태가 변경되었습니다.")

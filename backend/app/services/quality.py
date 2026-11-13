@@ -10,6 +10,8 @@ from app.schemas.quality import (
     GlossaryTermCreate,
     GlossaryTermResponse,
     GlossaryTermUpdate,
+    MeetingReviewRequest,
+    MeetingReviewResponse,
     MeetingTemplateCreate,
     MeetingTemplateResponse,
     MeetingTemplateUpdate,
@@ -20,6 +22,8 @@ from app.schemas.quality import (
     SegmentSpeakerUpdate,
     SpeakerEditResponse,
     TranscriptCorrectionResult,
+    VoiceProfileRequest,
+    VoiceProfileResponse,
 )
 from app.services.authorization import AuthorizationService
 
@@ -235,6 +239,28 @@ class QualityService:
             raise AppError(404, "SPEAKER_EDIT_NOT_FOUND", "되돌릴 화자 변경을 찾을 수 없습니다.")
         changed = await self.quality.undo_speaker_edit(batch_id)
         return SpeakerEditResponse(batch_id=batch_id, changed_count=changed)
+
+    async def review(
+        self, meeting_id: UUID, payload: MeetingReviewRequest
+    ) -> MeetingReviewResponse:
+        meeting = await self._managed_meeting(meeting_id)
+        if payload.status == "approved" and not meeting.get("summary"):
+            raise AppError(
+                422, "MEETING_NOT_READY_FOR_APPROVAL", "먼저 회의록 정리를 완료해 주세요."
+            )
+        row = await self.quality.create_review(
+            meeting_id, payload.status, payload.note.strip(), int(meeting["version"]), self.user.id
+        )
+        return MeetingReviewResponse(**row)
+
+    async def register_voice_profile(
+        self, team_id: UUID, payload: VoiceProfileRequest
+    ) -> VoiceProfileResponse:
+        await self.authorization.require_team_member(team_id)
+        row = await self.quality.upsert_voice_profile(
+            team_id, self.user.id, payload.label.strip(), payload.consented
+        )
+        return VoiceProfileResponse(**row)
 
     async def _managed_meeting(self, meeting_id: UUID) -> dict[str, Any]:
         meeting = await self.repository.get_meeting(meeting_id)

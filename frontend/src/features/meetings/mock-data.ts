@@ -2,6 +2,10 @@ import { currentUser, mockMembers } from "@/features/teams/mock-teams";
 import type { Meeting } from "@/types/api";
 
 const phaseBDefaults = {
+  review_status: "draft" as const,
+  approved_at: null,
+  approved_by: null,
+  approval_version: null,
   topic: "",
   location: "",
   meeting_type: "general" as const,

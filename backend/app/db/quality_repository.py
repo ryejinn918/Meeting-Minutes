@@ -304,3 +304,60 @@ class QualityRepository:
             },
         )
         return rows[0] if rows else None
+
+    async def create_review(
+        self, meeting_id: UUID, status: str, note: str, version: int, user_id: UUID
+    ) -> dict[str, Any]:
+        review_id = uuid4()
+        await self.client.request(
+            "POST", "meeting_reviews",
+            json={"id": str(review_id), "meeting_id": str(meeting_id), "status": status,
+                  "note": note, "version": version, "created_by": str(user_id)},
+            prefer="return=minimal",
+        )
+        await self.client.request(
+            "PATCH", "meetings", params={"id": f"eq.{meeting_id}"},
+            json={
+                "review_status": status,
+                "approved_at": datetime.now(UTC).isoformat() if status == "approved" else None,
+                "approved_by": str(user_id) if status == "approved" else None,
+                "approval_version": version if status == "approved" else None,
+            }, prefer="return=minimal",
+        )
+        rows, _ = await self.client.request(
+            "GET",
+            "meeting_reviews",
+            params={
+                "select": "status,note,version,created_at",
+                "id": f"eq.{review_id}",
+            },
+        )
+        if not rows:
+            raise RuntimeError("created review is not visible")
+        return rows[0]
+
+    async def upsert_voice_profile(
+        self, team_id: UUID, user_id: UUID, label: str, consented: bool
+    ) -> dict[str, Any]:
+        profile_id = uuid4()
+        await self.client.request(
+            "POST", "team_voice_profiles",
+            json={"id": str(profile_id), "team_id": str(team_id), "user_id": str(user_id),
+                  "label": label,
+                  "consented_at": datetime.now(UTC).isoformat() if consented else None,
+                  "revoked_at": None if consented else datetime.now(UTC).isoformat()},
+            params={"on_conflict": "team_id,user_id"},
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
+        rows, _ = await self.client.request(
+            "GET",
+            "team_voice_profiles",
+            params={
+                "select": "id,team_id,user_id,label,consented_at,revoked_at",
+                "team_id": f"eq.{team_id}",
+                "user_id": f"eq.{user_id}",
+            },
+        )
+        if not rows:
+            raise RuntimeError("voice profile is not visible")
+        return rows[0]

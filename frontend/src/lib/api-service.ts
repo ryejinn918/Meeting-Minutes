@@ -153,6 +153,10 @@ export const apiService = {
     apiRequest<{ batch_id: string; changed_count: number }>(`/api/v1/meetings/${meetingId}/transcript-segments/${segmentId}/speaker`, { method: "PATCH", body: JSON.stringify({ speaker_id: speakerId, scope }) }),
   undoSpeakerEdit: (meetingId: string, batchId: string) =>
     apiRequest<{ batch_id: string; changed_count: number }>(`/api/v1/meetings/${meetingId}/speaker-edits/${batchId}/undo`, { method: "POST" }),
+  reviewMeeting: (meetingId: string, status: "review_required" | "approved" | "rejected", note = "") =>
+    apiRequest<{ status: string; note: string; version: number; created_at: string }>(`/api/v1/meetings/${meetingId}/review`, { method: "POST", body: JSON.stringify({ status, note }) }),
+  registerVoiceProfile: (teamId: string, consented: boolean, label = "") =>
+    apiRequest<{ id: string; team_id: string; user_id: string; label: string; consented_at: string | null; revoked_at: string | null }>(`/api/v1/teams/${teamId}/voice-profile`, { method: "PUT", body: JSON.stringify({ consented, label }) }),
 };
 
 async function uploadResumable(input: UploadUrlResponse, file: File): Promise<void> {

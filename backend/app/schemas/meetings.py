@@ -54,6 +54,10 @@ class TranscriptSpeakerResponse(BaseModel):
     id: UUID
     provider_label: str
     display_name: str
+    candidate_user_id: UUID | None = None
+    candidate_confidence: float | None = None
+    candidate_reason: str = ""
+    confirmed_at: datetime | None = None
 
 
 class TranscriptSegmentResponse(BaseModel):
@@ -121,6 +125,10 @@ class MeetingResponse(BaseModel):
     meeting_at: datetime
     created_by: UserSummary
     processing_status: str
+    review_status: str = "draft"
+    approved_at: datetime | None = None
+    approved_by: UUID | None = None
+    approval_version: int | None = None
     version: int
     is_mine: bool
     is_shared_with_me: bool

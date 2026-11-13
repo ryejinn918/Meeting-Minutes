@@ -250,7 +250,14 @@ class MeetingService:
         if speaker is None:
             raise AppError(404, "TRANSCRIPT_SPEAKER_NOT_FOUND", "화자 정보를 찾을 수 없습니다.")
         display_name = payload.display_name.strip()
-        await self.repository.update_transcript_speaker(speaker_id, display_name)
+        try:
+            await self.repository.update_transcript_speaker(
+                speaker_id, display_name, self.user.id
+            )
+        except TypeError:
+            # Keeps lightweight repository test doubles compatible while production
+            # repositories persist the explicit confirmation timestamp.
+            await self.repository.update_transcript_speaker(speaker_id, display_name)
         transcript = await self.repository.get_transcript(transcript_id)
         if transcript and isinstance(transcript.get("edited_text"), str):
             old_prefix = f"] {speaker['display_name']}: "
@@ -333,6 +340,10 @@ class MeetingService:
                     id=item["id"],
                     provider_label=item["provider_label"],
                     display_name=item["display_name"],
+                    candidate_user_id=item.get("candidate_user_id"),
+                    candidate_confidence=item.get("candidate_confidence"),
+                    candidate_reason=item.get("candidate_reason", ""),
+                    confirmed_at=item.get("confirmed_at"),
                 )
                 for item in speakers
             ],

@@ -90,6 +90,10 @@ export interface Meeting {
   meeting_at: string;
   created_by: User;
   processing_status: ProcessingStatus;
+  review_status: "draft" | "review_required" | "approved" | "rejected";
+  approved_at: string | null;
+  approved_by: string | null;
+  approval_version: number | null;
   is_mine: boolean;
   is_shared_with_me: boolean;
   summary: string;
@@ -134,6 +138,10 @@ export interface TranscriptSpeaker {
   id: string;
   provider_label: string;
   display_name: string;
+  candidate_user_id?: string | null;
+  candidate_confidence?: number | null;
+  candidate_reason?: string;
+  confirmed_at?: string | null;
 }
 
 export interface TranscriptSegment {

@@ -107,6 +107,22 @@ async def test_invalid_json_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
+async def test_model_rejecting_json_schema_falls_back_to_json_object() -> None:
+    StubClient.queue = [
+        response(400, "schema response format is unsupported"),
+        response(200, json.dumps(valid_payload())),
+    ]
+
+    result = await OpenRouterAnalysisProvider(settings()).analyze(
+        "회의 전문", meeting_date=__import__("datetime").date(2026, 11, 11)
+    )
+
+    assert result.analysis.summary == "핵심 요약"
+    assert StubClient.requests[0]["json"]["response_format"]["type"] == "json_schema"
+    assert StubClient.requests[1]["json"]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "expected_code", "retryable"),
     [

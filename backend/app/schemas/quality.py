@@ -143,6 +143,32 @@ class SpeakerEditResponse(BaseModel):
     changed_count: int
 
 
+class MeetingReviewRequest(BaseModel):
+    status: Literal["review_required", "approved", "rejected"]
+    note: str = Field(default="", max_length=2000)
+
+
+class MeetingReviewResponse(BaseModel):
+    status: Literal["draft", "review_required", "approved", "rejected"]
+    note: str
+    version: int
+    created_at: datetime
+
+
+class VoiceProfileRequest(BaseModel):
+    consented: bool
+    label: str = Field(default="", max_length=100)
+
+
+class VoiceProfileResponse(BaseModel):
+    id: UUID
+    team_id: UUID
+    user_id: UUID
+    label: str
+    consented_at: datetime | None
+    revoked_at: datetime | None
+
+
 class QualityOptionsResponse(BaseModel):
     templates: list[MeetingTemplateResponse]
     glossary_terms: list[GlossaryTermResponse]

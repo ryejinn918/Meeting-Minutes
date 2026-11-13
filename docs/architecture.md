@@ -457,6 +457,12 @@ SIGNED_URL_TTL_SECONDS=300
 
 ## 10. 구현 시 먼저 확정할 결정
 
+### Phase B 품질 워크플로 확장
+
+회의 처리 상태(`processing_status`)와 별도로 `meetings.review_status`를 사용해 초안(`draft`), 검토 요청(`review_required`), 승인(`approved`), 반려(`rejected`)를 기록한다. 승인 이력은 `meeting_reviews`에 append-only로 저장하며, 승인 전 내용은 외부 공유의 공식본으로 간주하지 않는다.
+
+화자 후보와 신뢰도는 `transcript_speakers`의 nullable 필드로 보존하고, 자동 후보는 참고 정보일 뿐 사용자가 직접 확인해야 한다. `team_voice_profiles`는 동의·등록 상태만 저장하며, 음성 생체식별이나 자동 실명 확정은 범위에서 제외한다.
+
 1. OpenRouter DeepSeek 모델 ID와 structured output 지원 여부를 공식 카탈로그에서 선택·pin한다.
 2. 팀 초대 메일을 실제 발송할지, MVP 데모에서는 초대 링크 복사로 제한할지 결정한다.
 3. 공유받은 멤버를 read-only로 할지 `can_edit`를 노출할지 결정한다. 2일 MVP 권장은 read-only다.

@@ -7,6 +7,8 @@ from app.schemas.quality import (
     GlossaryTermCreate,
     GlossaryTermResponse,
     GlossaryTermUpdate,
+    MeetingReviewRequest,
+    MeetingReviewResponse,
     MeetingTemplateCreate,
     MeetingTemplateResponse,
     MeetingTemplateUpdate,
@@ -17,6 +19,8 @@ from app.schemas.quality import (
     SegmentSpeakerUpdate,
     SpeakerEditResponse,
     TranscriptCorrectionResult,
+    VoiceProfileRequest,
+    VoiceProfileResponse,
 )
 from app.services.quality import QualityService
 
@@ -130,3 +134,21 @@ async def undo_speaker_edit(
     service: QualityService = Depends(get_quality_service),
 ) -> SpeakerEditResponse:
     return await service.undo_speaker_edit(meeting_id, batch_id)
+
+
+@router.post("/meetings/{meeting_id}/review", response_model=MeetingReviewResponse)
+async def review_meeting(
+    meeting_id: UUID,
+    payload: MeetingReviewRequest,
+    service: QualityService = Depends(get_quality_service),
+) -> MeetingReviewResponse:
+    return await service.review(meeting_id, payload)
+
+
+@router.put("/teams/{team_id}/voice-profile", response_model=VoiceProfileResponse)
+async def register_voice_profile(
+    team_id: UUID,
+    payload: VoiceProfileRequest,
+    service: QualityService = Depends(get_quality_service),
+) -> VoiceProfileResponse:
+    return await service.register_voice_profile(team_id, payload)
