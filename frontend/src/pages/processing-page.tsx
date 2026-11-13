@@ -57,10 +57,7 @@ export function ProcessingPage() {
   const completed = job?.status === "succeeded";
   const stale = !failed && !completed && Boolean(job?.retryable);
   const isFileJob = job?.job_type === "extract" || job?.job_type === "transcribe";
-  const waitingForGpu = job?.job_type === "transcribe" && job.requested_provider === "whisperx" && job.status === "queued";
-  const title = waitingForGpu
-    ? "GPU 워커가 준비되기를 기다리고 있어요."
-    : isFileJob
+  const title = isFileJob
     ? failed ? "파일을 처리하지 못했어요." : completed ? "회의 내용을 모두 가져왔어요." : job?.job_type === "transcribe" ? "녹음된 회의 내용을 글로 옮기고 있어요." : "문서에서 회의 내용을 가져오고 있어요."
     : failed ? "회의록을 정리하지 못했어요." : completed ? "회의록 정리가 완료됐어요!" : !job || job.status === "queued" ? "회의록을 정리할 준비를 하고 있어요." : "회의록을 정리하고 있어요";
   const description = failed

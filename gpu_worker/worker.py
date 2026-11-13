@@ -107,6 +107,37 @@ def load_diarization_pipeline(pipeline_type: Any) -> Any:
     return pipeline
 
 
+def diarization_to_dataframe(diarized: Any) -> Any:
+    """Convert pyannote 4.x output to the dataframe expected by WhisperX.
+
+    pyannote 4.x returns a ``DiarizeOutput`` wrapper while
+    ``whisperx.assign_word_speakers`` expects a pandas dataframe.  Keeping this
+    conversion at the worker boundary also preserves compatibility with older
+    pyannote/WhisperX combinations that return an Annotation directly.
+    """
+    import pandas as pd
+
+    if isinstance(diarized, pd.DataFrame):
+        return diarized
+
+    annotation = getattr(diarized, "speaker_diarization", diarized)
+    itertracks = getattr(annotation, "itertracks", None)
+    if not callable(itertracks):
+        raise TypeError("Unsupported pyannote diarization output")
+
+    rows: list[dict[str, Any]] = []
+    for segment, _, speaker in itertracks(yield_label=True):
+        rows.append(
+            {
+                "segment": segment,
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "speaker": str(speaker),
+            }
+        )
+    return pd.DataFrame(rows, columns=["segment", "start", "end", "speaker"])
+
+
 def transcribe(path: Path) -> dict[str, Any]:
     import torch
     import whisperx
@@ -123,7 +154,7 @@ def transcribe(path: Path) -> dict[str, Any]:
     pipeline = load_diarization_pipeline(Pipeline)
     pipeline.to(torch.device(device))
     diarized = pipeline({"waveform": torch.from_numpy(audio).unsqueeze(0), "sample_rate": 16000})
-    result = whisperx.assign_word_speakers(diarized, result)
+    result = whisperx.assign_word_speakers(diarization_to_dataframe(diarized), result)
     segments = [
         {
             "speaker": str(item.get("speaker", "UNKNOWN")),
@@ -194,7 +225,7 @@ async def main() -> None:
                     f"{base}/api/v1/workers/jobs/{job_id}/complete", json=result
                 )
                 response.raise_for_status()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - worker must fail jobs safely
                 if isinstance(exc, ModelCacheError):
                     logger.error("WhisperX model cache error: %s", exc)
                 else:

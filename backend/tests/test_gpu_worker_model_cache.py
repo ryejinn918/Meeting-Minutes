@@ -1,4 +1,6 @@
 import importlib.util
+import sys
+import types
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -124,3 +126,48 @@ def test_incomplete_offline_asr_cache_has_clear_error(
 
     with pytest.raises(worker.ModelCacheError, match="ASR model is not available offline"):
         worker.load_asr_model(FailingWhisperX, "cuda")
+
+
+def test_pyannote_diarize_output_is_converted_for_whisperx(
+    worker: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeDataFrame:
+        def __init__(self, rows: list[dict[str, Any]], columns: list[str] | None = None) -> None:
+            self.rows = rows
+            self.columns = columns
+
+    monkeypatch.setitem(sys.modules, "pandas", types.SimpleNamespace(DataFrame=FakeDataFrame))
+
+    class Segment:
+        def __init__(self, start: float, end: float) -> None:
+            self.start = start
+            self.end = end
+
+    class Annotation:
+        def itertracks(self, *, yield_label: bool) -> list[tuple[Segment, None, str]]:
+            assert yield_label is True
+            return [(Segment(0.0, 1.25), None, "SPEAKER_00")]
+
+    class DiarizeOutput:
+        speaker_diarization = Annotation()
+
+    converted = worker.diarization_to_dataframe(DiarizeOutput())
+
+    assert converted.columns == ["segment", "start", "end", "speaker"]
+    assert converted.rows[0]["start"] == 0.0
+    assert converted.rows[0]["end"] == 1.25
+    assert converted.rows[0]["speaker"] == "SPEAKER_00"
+
+
+def test_existing_dataframe_is_not_rewrapped(
+    worker: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeDataFrame:
+        pass
+
+    monkeypatch.setitem(sys.modules, "pandas", types.SimpleNamespace(DataFrame=FakeDataFrame))
+    dataframe = FakeDataFrame()
+
+    assert worker.diarization_to_dataframe(dataframe) is dataframe
