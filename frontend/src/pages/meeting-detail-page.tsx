@@ -227,12 +227,16 @@ export function MeetingDetailPage() {
   function printPdf() {
     const current = meeting;
     if (!current) return;
-    const popup = window.open("", "_blank", "noopener,noreferrer");
+    const popup = window.open("", "_blank");
     if (!popup) return;
-    popup.document.write(`<html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(current.title)}</title><style>body{font-family:Arial,sans-serif;padding:32px;line-height:1.7}h1{color:#312e81}h2{border-bottom:1px solid #ddd;padding-bottom:6px;margin-top:24px}p,li{white-space:pre-wrap}</style></head><body><h1>${escapeHtml(current.title)}</h1><p>${escapeHtml(formatMeetingDate(current.meeting_at))}</p><h2>요약</h2><p>${escapeHtml(current.summary || "정리 전")}</p><h2>주요 논의사항</h2><ul>${current.key_discussions.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul><h2>결정사항</h2><ul>${current.decisions.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul><h2>후속 논의사항</h2><ul>${current.follow_ups.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul><h2>회의 전문</h2><p>${escapeHtml(current.transcript_edited)}</p></body></html>`);
-    popup.document.close();
-    popup.focus();
-    popup.print();
+    const document = popup.document;
+    document.open();
+    document.write(`<html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(current.title)}</title><style>body{font-family:Arial,sans-serif;padding:32px;line-height:1.7}h1{color:#312e81}h2{border-bottom:1px solid #ddd;padding-bottom:6px;margin-top:24px}p,li{white-space:pre-wrap}</style></head><body><h1>${escapeHtml(current.title)}</h1><p>${escapeHtml(formatMeetingDate(current.meeting_at))}</p><h2>요약</h2><p>${escapeHtml(current.summary || "정리 전")}</p><h2>주요 논의사항</h2><ul>${current.key_discussions.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul><h2>결정사항</h2><ul>${current.decisions.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul><h2>후속 논의사항</h2><ul>${current.follow_ups.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul><h2>회의 전문</h2><p>${escapeHtml(current.transcript_edited)}</p></body></html>`);
+    document.close();
+    window.setTimeout(() => {
+      popup.focus();
+      popup.print();
+    }, 300);
   }
 
   return <><PageHeader back title={meeting.title} description={`${formatMeetingDate(meeting.meeting_at)} · ${meeting.created_by.name}`} action={<StatusBadge status={meeting.processing_status} />} />
