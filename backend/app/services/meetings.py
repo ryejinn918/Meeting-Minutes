@@ -92,7 +92,7 @@ class MeetingService:
                     403, "SHARE_TARGET_DENIED", "같은 팀의 활성 구성원만 선택할 수 있습니다."
                 )
             seen.add(item.user_id)
-            shares.append(item.model_dump())
+            shares.append(item.model_dump(mode="json"))
         await self.repository.replace_meeting_shares(meeting_id, self.user.id, shares)
         return await self._hydrate(meeting)
 
