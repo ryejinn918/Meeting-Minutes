@@ -44,14 +44,14 @@ class TeamService:
                 "invited_by": str(self.user.id),
             }
         )
-        origin = self.settings.frontend_origin_list[0].rstrip("/")
+        await self.repository.create_invitation_notification(UUID(invitation["id"]))
         return InvitationResponse(
             id=invitation["id"],
             team_id=team_id,
             email=invitation["email_normalized"],
             role=invitation["role"],
             expires_at=invitation["expires_at"],
-            accept_url=f"{origin}/invitations/{token}",
+            accept_url=None,
         )
 
     async def accept_invitation(self, token: str) -> InvitationAcceptResponse:

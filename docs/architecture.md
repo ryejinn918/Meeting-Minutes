@@ -263,6 +263,8 @@ system prompt에는 다음을 고정한다: 원문 외 사실 금지, 제안/추
 
 ## 5. FastAPI Endpoint 설계
 
+팀 초대는 가입된 사용자의 이메일을 입력해 `notifications`에 앱 내 알림을 생성하는 방식으로 처리한다. 수신자는 알림에서 수락/거절하며, 수락 시에만 `team_members`가 생성된다. 이메일 발송이나 공개 초대 링크는 사용하지 않는다. 알림 데이터는 수신자 본인만 RLS로 조회할 수 있고, 수락 RPC가 이메일 일치·만료·중복 가입을 재검증한다.
+
 기본 prefix는 `/api/v1`이다. 모든 보호 endpoint는 Bearer token이 필요하며 오류 형식은 `{ "error": { "code", "message", "details?", "request_id" } }`로 통일한다. 목록은 cursor pagination을 사용한다.
 
 ### 5.1 인증/팀

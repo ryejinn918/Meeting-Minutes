@@ -705,3 +705,50 @@ class MeetFlowRepository:
             "POST", "rpc/decline_team_invitation", json={"target_token_hash": token_hash}
         )
         return bool(value)
+
+    async def create_invitation_notification(self, invitation_id: UUID) -> bool:
+        value, _ = await self.client.request(
+            "POST",
+            "rpc/create_team_invitation_notification",
+            json={"target_invitation_id": str(invitation_id)},
+        )
+        return bool(value)
+
+    async def list_notifications(self, user_id: UUID) -> list[dict[str, Any]]:
+        rows, _ = await self.client.request(
+            "GET",
+            "notifications",
+            params={
+                "select": "id,type,title,body,data,read_at,created_at",
+                "user_id": f"eq.{user_id}",
+                "order": "created_at.desc",
+                "limit": "50",
+            },
+        )
+        return rows
+
+    async def mark_notification_read(self, notification_id: UUID, user_id: UUID) -> bool:
+        rows, _ = await self.client.request(
+            "PATCH",
+            "notifications",
+            params={"id": f"eq.{notification_id}", "user_id": f"eq.{user_id}"},
+            json={"read_at": datetime.now(UTC).isoformat()},
+            prefer="return=representation",
+        )
+        return bool(rows)
+
+    async def accept_invitation_notification(self, notification_id: UUID) -> UUID:
+        value, _ = await self.client.request(
+            "POST",
+            "rpc/accept_team_invitation_notification",
+            json={"target_notification_id": str(notification_id)},
+        )
+        return UUID(str(value))
+
+    async def decline_invitation_notification(self, notification_id: UUID) -> bool:
+        value, _ = await self.client.request(
+            "POST",
+            "rpc/decline_team_invitation_notification",
+            json={"target_notification_id": str(notification_id)},
+        )
+        return bool(value)

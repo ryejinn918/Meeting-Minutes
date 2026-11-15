@@ -23,6 +23,16 @@ export interface User {
   avatar_url?: string | null;
 }
 
+export interface AppNotification {
+  id: string;
+  type: "team_invitation";
+  title: string;
+  body: string;
+  data: { invitation_id?: string; team_id?: string };
+  read_at: string | null;
+  created_at: string;
+}
+
 export interface TeamMember extends User {
   role: TeamRole;
 }

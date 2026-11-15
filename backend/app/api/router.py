@@ -5,6 +5,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.files import router as files_router
 from app.api.routes.health import router as health_router
 from app.api.routes.meetings import router as meetings_router
+from app.api.routes.notifications import router as notifications_router
 from app.api.routes.organizations import router as organizations_router
 from app.api.routes.quality import router as quality_router
 from app.api.routes.teams import invitation_router
@@ -21,6 +22,7 @@ protected_router.include_router(auth_router, tags=["auth"])
 protected_router.include_router(teams_router, tags=["teams"])
 protected_router.include_router(invitation_router, tags=["invitations"])
 protected_router.include_router(meetings_router, tags=["meetings"])
+protected_router.include_router(notifications_router, tags=["notifications"])
 protected_router.include_router(files_router, tags=["files"])
 protected_router.include_router(analysis_router, tags=["analysis"])
 protected_router.include_router(quality_router, tags=["quality"])

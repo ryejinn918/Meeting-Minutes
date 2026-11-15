@@ -3,7 +3,7 @@ import * as tus from "tus-js-client";
 
 import { apiRequest } from "@/lib/api-client";
 import { supabase } from "@/lib/supabase";
-import type { Department, FileCompleteResponse, GlossaryTerm, Meeting, MeetingFile, MeetingListItem, MeetingQuestion, MeetingTemplate, Organization, OrganizationDetail, ProcessingJob, QualityOptions, Team, TeamDetail, TeamMember, TranscriptCorrectionResult, UploadUrlResponse, User } from "@/types/api";
+import type { AppNotification, Department, FileCompleteResponse, GlossaryTerm, Meeting, MeetingFile, MeetingListItem, MeetingQuestion, MeetingTemplate, Organization, OrganizationDetail, ProcessingJob, QualityOptions, Team, TeamDetail, TeamMember, TranscriptCorrectionResult, UploadUrlResponse, User } from "@/types/api";
 
 interface MeApiResponse {
   id: string;
@@ -47,7 +47,10 @@ export const apiService = {
     return { ...team, members: team.members.map(normalizeMember) };
   },
   createInvitation: (teamId: string, email: string) =>
-    apiRequest<{ id: string; team_id: string; email: string; expires_at: string; accept_url: string }>(`/api/v1/teams/${teamId}/invitations`, { method: "POST", body: JSON.stringify({ email, role: "member" }) }),
+    apiRequest<{ id: string; team_id: string; email: string; expires_at: string; accept_url: string | null }>(`/api/v1/teams/${teamId}/invitations`, { method: "POST", body: JSON.stringify({ email, role: "member" }) }),
+  getNotifications: () => apiRequest<AppNotification[]>("/api/v1/notifications"),
+  acceptNotification: (id: string) => apiRequest<{ team_id: string | null }>(`/api/v1/notifications/${id}/accept`, { method: "POST" }),
+  declineNotification: (id: string) => apiRequest<{ team_id: string | null }>(`/api/v1/notifications/${id}/decline`, { method: "POST" }),
   acceptInvitation: (token: string) =>
     apiRequest<{ team_id: string }>(`/api/v1/invitations/${encodeURIComponent(token)}/accept`, { method: "POST" }),
   declineInvitation: (token: string) =>

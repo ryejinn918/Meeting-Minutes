@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { apiService, sha256File } from "@/lib/api-service";
 import { queryKeys } from "@/lib/query-keys";
-import type { MeetingType } from "@/types/api";
 
 type InputMode = "audio" | "recording" | "document" | "text";
 type UploadStage = "idle" | "preparing" | "uploading" | "confirming";
@@ -45,7 +44,7 @@ export function MeetingNewPage() {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [topic, setTopic] = useState("");
-  const [meetingType, setMeetingType] = useState<MeetingType>("general");
+  const meetingType = "general" as const;
   const [templateId, setTemplateId] = useState("");
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [mode, setMode] = useState<InputMode>("text");
@@ -160,8 +159,7 @@ export function MeetingNewPage() {
         <label className="block text-sm font-semibold text-slate-700">회의 주제<Input className="mt-2" maxLength={500} onChange={(event) => setTopic(event.target.value)} placeholder="이번 회의에서 다룰 핵심 주제" value={topic} /></label>
         <label className="block text-sm font-semibold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDate(event.target.value)} type="date" value={date} /></label>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-semibold text-slate-700">회의 유형<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setMeetingType(event.target.value as MeetingType)} value={meetingType}><option value="general">일반 회의</option><option value="project">프로젝트 회의</option><option value="interview">인터뷰</option><option value="workshop">워크숍·아이디어 회의</option></select></label>
-          <label className="block text-sm font-semibold text-slate-700">회의록 템플릿<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setTemplateId(event.target.value)} value={templateId}><option value="">유형 기본 템플릿</option>{qualityQuery.data?.templates.filter((item) => item.meeting_type === meetingType).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="block text-sm font-semibold text-slate-700 sm:col-span-2">회의록 템플릿<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setTemplateId(event.target.value)} value={templateId}><option value="">기본 템플릿</option>{qualityQuery.data?.templates.filter((item) => item.meeting_type === "project" || item.meeting_type === "interview").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         </div>
         {teamQuery.data?.members.length ? <fieldset><legend className="text-sm font-semibold text-slate-700">참석자</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{teamQuery.data.members.map((member) => <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm" key={member.id}><input checked={attendeeIds.includes(member.id)} onChange={(event) => setAttendeeIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} type="checkbox" />{member.name}</label>)}</div></fieldset> : null}
         <p className="text-xs leading-5 text-slate-500">입력한 회의 정보와 참석자를 확인한 상태로 저장됩니다. 나중에 상세 화면에서 수정할 수 있어요.</p>
