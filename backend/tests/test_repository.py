@@ -80,6 +80,36 @@ async def test_create_transcript_preserves_original_and_reads_after_insert() -> 
 
 
 @pytest.mark.asyncio
+async def test_update_transcript_uses_minimal_return_and_reads_updated_row() -> None:
+    class TranscriptClient(RecordingClient):
+        async def request(self, method: str, path: str, **kwargs: Any) -> tuple[Any, dict]:
+            self.calls.append({"method": method, "path": path, **kwargs})
+            if method == "PATCH":
+                self.created_rows["meeting_transcripts"]["edited_text"] = kwargs[
+                    "json"
+                ]["edited_text"]
+                return None, {}
+            row = self.created_rows.get(path)
+            return ([row] if row else []), {}
+
+    client = TranscriptClient()
+    repository = MeetFlowRepository(client)  # type: ignore[arg-type]
+    transcript_id = UUID("44444444-4444-4444-8444-444444444444")
+    client.created_rows["meeting_transcripts"] = {
+        "id": str(transcript_id),
+        "original_text": "Original text",
+        "edited_text": "Original text",
+    }
+
+    result = await repository.update_transcript(transcript_id, "Corrected text")
+
+    assert result["edited_text"] == "Corrected text"
+    assert client.calls[0]["method"] == "PATCH"
+    assert client.calls[0]["prefer"] == "return=minimal"
+    assert client.calls[1]["method"] == "GET"
+
+
+@pytest.mark.asyncio
 async def test_draft_action_items_use_direct_null_filter() -> None:
     client = RecordingClient()
     repository = MeetFlowRepository(client)  # type: ignore[arg-type]

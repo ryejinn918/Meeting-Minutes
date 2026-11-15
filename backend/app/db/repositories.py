@@ -487,14 +487,24 @@ class MeetFlowRepository:
         return file
 
     async def update_transcript(self, transcript_id: UUID, text: str) -> dict[str, Any]:
-        rows, _ = await self.client.request(
+        # Avoid INSERT/PATCH RETURNING here: PostgREST evaluates the returned
+        # row through SELECT RLS, which can make an otherwise successful edit
+        # look like a storage failure. Read the row explicitly after the write.
+        await self.client.request(
             "PATCH",
             "meeting_transcripts",
             params={"id": f"eq.{transcript_id}"},
             json={"edited_text": text},
-            prefer="return=representation",
+            prefer="return=minimal",
         )
-        return rows[0]
+        transcript = await self.get_transcript(transcript_id)
+        if transcript is None:
+            raise AppError(
+                502,
+                "TRANSCRIPT_UPDATE_INCONSISTENT",
+                "회의 전문 저장 결과를 확인할 수 없습니다.",
+            )
+        return transcript
 
     async def create_transcript_diarization(
         self,

@@ -29,13 +29,13 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
-      { path: "/teams", element: <TeamsPage /> },
-      { path: "/teams/new", element: <TeamNewPage /> },
-      { path: "/invitations/:token", element: <InvitationPage /> },
-      { path: "/organizations", element: <OrganizationsPage /> },
       {
         element: <AppLayout />,
         children: [
+          { path: "/teams", element: <TeamsPage /> },
+          { path: "/teams/new", element: <TeamNewPage /> },
+          { path: "/invitations/:token", element: <InvitationPage /> },
+          { path: "/organizations", element: <OrganizationsPage /> },
           { path: "/t/:teamId/meetings", element: <MeetingsPage /> },
           { path: "/t/:teamId/meetings/new", element: <MeetingNewPage /> },
           { path: "/meetings/:id/processing", element: <ProcessingPage /> },
