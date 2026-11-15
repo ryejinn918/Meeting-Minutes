@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -11,6 +12,8 @@ from app.db.quality_repository import QualityRepository
 from app.db.repositories import MeetFlowRepository
 from app.schemas.jobs import JobResponse
 from app.services.authorization import AuthorizationService
+
+logger = logging.getLogger("uvicorn.error")
 
 NON_RETRYABLE_CODES = {
     "AI_AUTHENTICATION_ERROR",
@@ -108,7 +111,9 @@ class AnalysisService:
         if job is None:
             return
         meeting_id = UUID(job["meeting_id"])
+        stage = "load_job"
         try:
+            stage = "mark_processing"
             await self.admin_ai_repository.update_job(
                 job_id,
                 {
@@ -118,6 +123,7 @@ class AnalysisService:
                     "finished_at": None,
                 },
             )
+            stage = "load_meeting"
             meeting = await self.admin_repository.get_meeting(meeting_id)
             if meeting is None or not meeting.get("current_transcript_id"):
                 raise AIProviderError(
@@ -134,6 +140,7 @@ class AnalysisService:
                     },
                 )
                 return
+            stage = "load_transcript"
             transcript_id = UUID(meeting["current_transcript_id"])
             transcript = await self.admin_repository.get_transcript(transcript_id)
             text = (transcript or {}).get("edited_text", "").strip()
@@ -147,10 +154,12 @@ class AnalysisService:
                     "회의 전문이 분석 가능한 길이를 초과했습니다.",
                     retryable=False,
                 )
+            stage = "set_analyzing_status"
             await self._set_meeting_status(meeting, "analyzing")
             meeting_at = datetime.fromisoformat(str(meeting["meeting_at"]).replace("Z", "+00:00"))
             client = getattr(self.admin_repository, "client", None)
             quality_repository = QualityRepository(client) if client is not None else None
+            stage = "load_quality_context"
             team = (
                 await self.admin_repository.get_team(UUID(meeting["team_id"]))
                 if quality_repository
@@ -190,6 +199,7 @@ class AnalysisService:
                     if item.get("status") == "answered"
                 ],
             }
+            stage = "provider_analyze"
             result = await self.provider.analyze(
                 text, meeting_date=meeting_at.date(), context=context
             )
@@ -197,6 +207,7 @@ class AnalysisService:
             usage = dict(result.usage)
             if result.request_id:
                 usage["request_id"] = result.request_id
+            stage = "save_ai_run"
             run_id = await self.admin_ai_repository.create_ai_run(
                 meeting_id=meeting_id,
                 transcript_id=transcript_id,
@@ -205,6 +216,7 @@ class AnalysisService:
                 validated_output=output,
                 usage=usage,
             )
+            stage = "save_notes"
             notes_id = await self.admin_ai_repository.create_notes(
                 meeting_id=meeting_id,
                 run_id=run_id,
@@ -214,6 +226,7 @@ class AnalysisService:
                 decisions=self._notes_items(result.analysis.decisions),
                 follow_ups=self._notes_items(result.analysis.follow_ups),
             )
+            stage = "save_action_items"
             await self.admin_ai_repository.create_action_items(
                 [
                     {
@@ -232,6 +245,7 @@ class AnalysisService:
                     for index, item in enumerate(result.analysis.action_items)
                 ]
             )
+            stage = "save_meeting_result"
             latest = await self.admin_repository.get_meeting(meeting_id)
             if latest is None:
                 raise AppError(404, "MEETING_NOT_FOUND", "회의록을 찾을 수 없습니다.")
@@ -246,6 +260,7 @@ class AnalysisService:
             )
             if updated is None:
                 raise AppError(409, "MEETING_VERSION_CONFLICT", "회의록 상태가 변경되었습니다.")
+            stage = "mark_succeeded"
             await self.admin_ai_repository.update_job(
                 job_id,
                 {
@@ -257,14 +272,32 @@ class AnalysisService:
             )
         except AIProviderError as exc:
             await self._fail(job_id, meeting_id, exc.code, exc.safe_message)
-        except AppError:
+        except AppError as exc:
+            details = exc.details or {}
+            logger.warning(
+                "analysis_failed job_id=%s meeting_id=%s stage=%s error_code=%s "
+                "upstream_code=%s upstream_status=%s",
+                job_id,
+                meeting_id,
+                stage,
+                details.get("code", exc.code),
+                details.get("upstream_code"),
+                details.get("upstream_status"),
+            )
             await self._fail(
                 job_id,
                 meeting_id,
                 "ANALYSIS_STORAGE_ERROR",
                 "분석 결과를 저장하지 못했습니다. 다시 시도해 주세요.",
             )
-        except Exception:
+        except Exception as exc:
+            logger.error(
+                "analysis_failed job_id=%s meeting_id=%s stage=%s exception_type=%s",
+                job_id,
+                meeting_id,
+                stage,
+                type(exc).__name__,
+            )
             await self._fail(
                 job_id,
                 meeting_id,
