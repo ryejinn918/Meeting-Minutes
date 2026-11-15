@@ -160,20 +160,29 @@ class AnalysisService:
             client = getattr(self.admin_repository, "client", None)
             quality_repository = QualityRepository(client) if client is not None else None
             stage = "load_quality_context"
-            team = (
-                await self.admin_repository.get_team(UUID(meeting["team_id"]))
-                if quality_repository
-                else None
-            )
-            glossary = (
-                await quality_repository.list_glossary(team) if quality_repository and team else []
-            )
-            questions = (
-                await quality_repository.list_questions(meeting_id) if quality_repository else []
-            )
+            team = None
+            if quality_repository:
+                try:
+                    team = await self.admin_repository.get_team(UUID(meeting["team_id"]))
+                except AppError as exc:
+                    self._log_optional_context_failure("team", meeting_id, exc)
+            glossary: list[dict[str, Any]] = []
+            questions: list[dict[str, Any]] = []
             template = None
+            if quality_repository and team:
+                try:
+                    glossary = await quality_repository.list_glossary(team)
+                except AppError as exc:
+                    self._log_optional_context_failure("glossary", meeting_id, exc)
+                try:
+                    questions = await quality_repository.list_questions(meeting_id)
+                except AppError as exc:
+                    self._log_optional_context_failure("questions", meeting_id, exc)
             if quality_repository and meeting.get("template_id"):
-                template = await quality_repository.get_template(UUID(meeting["template_id"]))
+                try:
+                    template = await quality_repository.get_template(UUID(meeting["template_id"]))
+                except AppError as exc:
+                    self._log_optional_context_failure("template", meeting_id, exc)
             context = {
                 "topic": meeting.get("topic", ""),
                 "meeting_type": meeting.get("meeting_type", "general"),
@@ -380,3 +389,16 @@ class AnalysisService:
         return [
             {"id": str(uuid4()), "text": item.text, "evidence": item.evidence} for item in items
         ]
+
+    @staticmethod
+    def _log_optional_context_failure(kind: str, meeting_id: UUID, exc: AppError) -> None:
+        details = exc.details or {}
+        logger.warning(
+            "optional_quality_context_unavailable kind=%s meeting_id=%s "
+            "error_code=%s upstream_code=%s upstream_status=%s",
+            kind,
+            meeting_id,
+            exc.code,
+            details.get("upstream_code"),
+            details.get("upstream_status"),
+        )
