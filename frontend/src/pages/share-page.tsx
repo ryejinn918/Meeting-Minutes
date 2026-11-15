@@ -24,6 +24,7 @@ export function SharePage() {
     <div className="my-5 flex items-center justify-between"><div><h2 className="font-bold text-slate-900">공유할 팀원</h2><p className="mt-1 text-xs text-slate-500">같은 팀의 멤버만 선택할 수 있습니다.</p></div><span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">{selected.length}명 선택</span></div>
     <MemberSelector members={selectableMembers} onQueryChange={setQuery} onToggle={(memberId) => { setSaved(false); setSelected((current) => current.includes(memberId) ? current.filter((idValue) => idValue !== memberId) : [...current, memberId]); }} query={query} selectedIds={selected} />
     {saved && <p className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-emerald-600"><CheckCircle2 className="h-4 w-4" />공유 대상을 저장했어요.</p>}
+    {save.isError && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{save.error.message}</p>}
     <div className="sticky bottom-20 mt-6 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur"><Button className="w-full" disabled={save.isPending} onClick={() => save.mutate()}><Share2 className="h-4 w-4" />{save.isPending ? "공유 저장 중..." : "공유하기"}</Button>{selected.length > 0 && <Button className="mt-2 w-full" onClick={() => setSelected([])} variant="ghost"><UserRoundCheck className="h-4 w-4" />모든 선택 취소</Button>}</div>
   </>;
 }

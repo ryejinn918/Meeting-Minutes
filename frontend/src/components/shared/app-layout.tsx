@@ -14,7 +14,7 @@ export function AppLayout() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const notifications = useQuery({ queryKey: queryKeys.notifications, queryFn: apiService.getNotifications, refetchInterval: 30000 });
-  const accept = useMutation({ mutationFn: apiService.acceptNotification, onSuccess: async ({ team_id }) => { await queryClient.invalidateQueries({ queryKey: queryKeys.notifications }); await queryClient.invalidateQueries({ queryKey: queryKeys.teams }); if (team_id) navigate(`/t/${team_id}/meetings`); } });
+  const accept = useMutation({ mutationFn: apiService.acceptNotification, onSuccess: async ({ team_id }) => { await queryClient.invalidateQueries({ queryKey: queryKeys.notifications }); await queryClient.invalidateQueries({ queryKey: queryKeys.teams }); if (team_id) { await queryClient.invalidateQueries({ queryKey: queryKeys.meetings(team_id) }); navigate(`/t/${team_id}/meetings`); } } });
   const decline = useMutation({ mutationFn: apiService.declineNotification, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.notifications }); } });
   const unread = notifications.data?.filter((item) => !item.read_at).length ?? 0;
   return (
