@@ -255,6 +255,6 @@ export function MeetingDetailPage() {
       {tab === "transcript" && !editing && meeting.transcript_segments.length > 0 && <DiarizedTranscript attendees={meeting.attendees} editable={canEdit} latestBatchId={meeting.latest_speaker_edit_batch_id} meetingId={id} segments={meeting.transcript_segments} speakers={meeting.transcript_speakers} />}
     </MeetingTabs>
     {remove.error && <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{remove.error.message}</p>}
-    <ConfirmDialog keepOpenOnConfirm open={deleteOpen} pending={remove.isPending} title="회의록을 삭제할까요?" description="목록에서 숨겨지는 소프트 삭제로 처리됩니다. 원본 파일은 즉시 제거하지 않고 별도 보존·정리 정책을 따릅니다." confirmLabel={remove.isPending ? "삭제 중..." : "삭제"} onClose={() => setDeleteOpen(false)} onConfirm={() => remove.mutate()} />
+    <ConfirmDialog error={remove.error?.message} keepOpenOnConfirm open={deleteOpen} pending={remove.isPending} title="회의록을 삭제할까요?" description="목록에서 숨겨지는 소프트 삭제로 처리됩니다. 원본 파일은 즉시 제거하지 않고 별도 보존·정리 정책을 따릅니다." confirmLabel={remove.isPending ? "삭제 중..." : "삭제"} onClose={() => setDeleteOpen(false)} onConfirm={() => remove.mutate()} />
   </>;
 }
