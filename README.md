@@ -1,8 +1,25 @@
 # MeetFlow
 
-> Phase B 준비 상태: 회의 메타데이터, 유형별 기본 템플릿, 조직·부문·팀별 선택형 용어집, 전문 교정 이력, 확인 질문, 구간별 화자 확인 UI를 로컬 코드에 구현했습니다. 신규 Migration은 원격 DB에 적용하기 전 별도 검토와 승인이 필요합니다.
+> 현재 상태 기준: 2026-11-16. 아래 기능 목록은 개인 개발 환경과 배포된 MeetFlow 기준이며, 다른 Supabase 프로젝트에 복사할 때는 해당 프로젝트의 Migration·환경변수·배포 설정을 별도로 적용해야 합니다.
 
-사내 팀용 AI 회의록 관리 모바일 PWA입니다. 현재 **3-B단계**로 직접 입력과 파일 기반 전문 생성, OpenRouter 회의 분석 파이프라인까지 구현되어 있습니다.
+## 현재 구현 상태
+
+- Supabase Auth, 팀·조직 관리, 직접 입력 회의록 생성·조회·수정·소프트 삭제가 실제 연동되어 있습니다.
+- OpenRouter 분석 파이프라인, 처리 작업 폴링·재시도, 요약·논의·결정·후속 논의·액션아이템 저장이 구현되어 있습니다.
+- MP3/M4A/WAV 및 TXT/PDF 업로드, 대용량 음성 분할, 체크포인트, WhisperX·pyannote GPU 워커, 화자·타임스탬프 전사가 구현되어 있습니다.
+- 팀원 초대 알림, 회의록 선택 공유(읽기 전용), PDF·HTML 다운로드가 구현되어 있습니다.
+- WhisperX 전사는 Windows RTX 4090 워커가 켜져 있고 `gpu_worker/worker.py`가 실행 중일 때 사용할 수 있습니다. 워커가 없으면 작업은 대기합니다.
+
+## 검증 상태와 제한
+
+- 개발·자동 테스트는 `AI_MODE=mock`, `STT_MODE=mock`을 기본으로 합니다.
+- 실제 OpenRouter 및 OpenAI 호출은 비용이 발생하므로 모든 경우의 유료 E2E 검증을 완료한 상태가 아닙니다.
+- WhisperX 실제 음성 추론과 모바일 전체 E2E는 테스트 음성·운영 환경에 따라 별도 확인이 필요합니다.
+- 팀 저장소에 코드를 복사하는 경우 `tools/meetflow`의 코드만으로 서비스가 자동 구성되지는 않습니다. Supabase Migration, Vercel·Render 환경변수, GPU 워커 환경을 별도로 준비해야 합니다.
+
+> Phase B 품질 기능과 Phase C GPU 워커·협업 기능이 코드에 포함되어 있습니다. Migration은 적용 대상 Supabase 프로젝트별로 상태를 확인해야 합니다.
+
+사내 팀용 AI 회의록 관리 모바일 PWA입니다. 직접 입력·파일 기반 전문 생성·OpenRouter 회의 분석·WhisperX GPU 전사 파이프라인을 제공합니다.
 
 ## 현재 동작 범위
 
@@ -18,7 +35,7 @@
 - AI 원본 실행 기록과 사용자 편집본 분리 저장
 - 요약·논의·결정·후속 논의 편집본 저장과 액션아이템 조회
 
-3-B 로컬 구현(새 Migration 적용 필요):
+3-B 파일·전사 구현:
 
 - MP3/M4A/WAV와 TXT/PDF의 Private Storage signed upload
 - 파일 크기·MIME·magic bytes·SHA-256 검증
@@ -28,10 +45,10 @@
 - 6MB 초과 파일의 Supabase resumable TUS 업로드와 구간별 STT checkpoint
 - 추출·전사 작업 상태 저장, 재시도, 완료 후 전문 확인·수정
 
-아직 Mock 또는 비활성 상태:
+추가 확인이 필요한 기능:
 
-- 팀원 초대와 회의록 공유 저장
-- PDF 다운로드(TXT 브라우저 다운로드는 동작)
+- 실제 OpenRouter/OpenAI 유료 호출의 전체 E2E 검증
+- WhisperX GPU 워커가 꺼진 상태에서의 전사 처리
 - 재분석 결과 비교·적용 및 액션아이템 편집
 
 Mock 화면은 실제 데이터와 섞지 않으며 화면에 상태를 명시합니다.
@@ -49,7 +66,7 @@ OpenRouter 실호출은 환경변수와 실제 모델 계정 상태에 따라 �
 ## Supabase 준비
 
 1. Supabase 프로젝트를 만들고 Email/Password Auth를 활성화합니다.
-2. [초기 Migration](supabase/migrations/202611110001_initial_schema.sql)을 검토한 후 개발 프로젝트에 적용합니다. 저장소 작업만으로 원격 DB에는 적용되지 않습니다.
+2. [초기 Migration](supabase/migrations/202611110001_initial_schema.sql)을 검토한 후 대상 프로젝트에 적용합니다. 저장소 작업만으로 다른 원격 DB에 자동 적용되지는 않습니다.
 3. AI 분석 작업을 사용하려면 [AI worker 권한 Migration](supabase/migrations/202611110002_ai_worker_grants.sql)도 검토·적용합니다. 이 Migration은 서버의 `service_role`에 분석 관련 테이블의 최소 권한만 부여하며 RLS를 비활성화하지 않습니다.
 4. 파일 업로드를 사용하려면 [3-B 파일 Migration](supabase/migrations/202611120001_file_ingestion.sql)을 검토·적용합니다. Private `meeting-files` bucket, 파일 메타데이터와 최소 Storage RLS를 생성합니다.
 5. 대용량 음성을 사용하려면 [대용량 음성 Migration](supabase/migrations/202611120002_large_audio_chunking.sql)을 추가로 검토·적용합니다. DB 하드캡, Storage 상한, 비공개 chunk checkpoint를 생성합니다.
@@ -118,13 +135,12 @@ STT_MODE=mock
 
 `STT_MODE=mock`은 실제 음성을 외부로 보내지 않는 개발 검증용입니다. 실제 전사는 `STT_MODE=real`로 명시적으로 전환해야 합니다. 화자 라벨은 조각별 범위로만 유지하며 서로 다른 조각의 동일 라벨을 같은 사람으로 추측하지 않습니다.
 
-현재 개발 DB에 초기 Migration만 적용된 경우 분석 작업은 `processing_jobs` 접근에서 PostgreSQL `42501`로 실패합니다. 원격 적용 전 반드시 대상 프로젝트를 확인한 뒤 다음 순서로 진행합니다.
+대상 DB에 필요한 Migration이 빠져 있으면 분석·업로드·화자 전사 작업이 PostgreSQL 권한 오류(`42501`)로 실패할 수 있습니다. 원격 적용 전 반드시 대상 프로젝트를 확인한 뒤 Migration 상태를 점검합니다.
 
 ```powershell
 npx supabase migration list
 npx supabase db push --remote --dry-run
-# 출력에서 202611110002_ai_worker_grants.sql만 예정된 것을 확인한 뒤,
-# 사용자 승인 후에만 실제 npx supabase db push 실행
+# 예정된 Migration과 대상 프로젝트를 확인한 뒤, 승인된 경우에만 실제 db push 실행
 ```
 
 검증:
@@ -162,7 +178,7 @@ ruff check .
 
 조직과 부문을 등록하고 새 팀을 해당 범위에 연결할 수 있습니다. 기존 팀은 데이터 안전을 위해 자동으로 조직에 배정하지 않으며 `조직 미지정` 상태로 계속 사용할 수 있습니다. 회의록 삭제는 소프트 삭제이며 진행 중인 전사·정리 작업이 있거나 version 충돌이 있으면 삭제하지 않습니다.
 
-새 Migration `202611120005_organization_hierarchy_and_safe_delete.sql`은 아직 원격 DB에 적용하지 않습니다. 적용 전 Supabase 대상 프로젝트와 백업 정책을 확인해야 합니다.
+조직 계층·안전 삭제 Migration도 대상 프로젝트별 적용 상태를 확인해야 합니다. 원격 DB에 적용하기 전 Supabase 대상 프로젝트와 백업 정책을 확인합니다.
 
 ## 문서
 
