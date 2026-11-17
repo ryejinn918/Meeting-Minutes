@@ -48,6 +48,14 @@ CORRECTION_SYSTEM_PROMPT = """당신은 보수적인 회의 전사문 교정기�
 JSON Schema에 맞는 JSON 객체만 반환하세요."""
 
 
+CORRECTION_OUTPUT_CONTRACT = (
+    "OUTPUT CONTRACT: Return exactly one JSON object and no Markdown or explanation. "
+    "Use only corrected_text (full transcript string), changes (array), and uncertainties (array). "
+    "If there are no changes or uncertainties, return empty arrays. "
+    "Preserve original text when uncertain."
+)
+
+
 def build_correction_prompt(
     transcript: str,
     topic: str,
@@ -55,10 +63,12 @@ def build_correction_prompt(
     *,
     persona: str = "general",
 ) -> str:
+    output_contract = CORRECTION_OUTPUT_CONTRACT
     return (
         f"회의 주제: {topic or '미입력'}\n"
         f"선택 페르소나: {persona or 'general'}\n"
         "교정 원칙: 확실한 오류만 수정하고, 의미가 바뀔 수 있는 표현은 유지하세요.\n\n"
+        f"{output_contract}\n\n"
         "<meeting_transcript>\n"
         f"{transcript}\n"
         "</meeting_transcript>"

@@ -207,13 +207,28 @@ class AnalysisService:
                 ) if value
             )
             stage = "provider_correct_transcript"
-            correction_result = await self.provider.correct_transcript(
-                text,
-                topic=correction_topic,
-                persona=meeting.get("correction_persona", "general"),
-            )
-            corrected_text = correction_result.correction.corrected_text.strip() or text
-            if quality_repository:
+            correction_result = None
+            try:
+                correction_result = await self.provider.correct_transcript(
+                    text,
+                    topic=correction_topic,
+                    persona=meeting.get("correction_persona", "general"),
+                )
+            except AIProviderError as exc:
+                if exc.code != "AI_INVALID_RESPONSE":
+                    raise
+                logger.warning(
+                    "transcript_correction_fallback job_id=%s meeting_id=%s error_code=%s",
+                    job_id,
+                    meeting_id,
+                    exc.code,
+                )
+            corrected_text = (
+                correction_result.correction.corrected_text.strip()
+                if correction_result
+                else ""
+            ) or text
+            if quality_repository and correction_result:
                 stage = "save_transcript_correction"
                 await quality_repository.save_correction(
                     meeting_id=meeting_id,

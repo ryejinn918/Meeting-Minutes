@@ -113,7 +113,7 @@ class OpenRouterAnalysisProvider:
                     TranscriptCorrectionResult.model_json_schema(),
                 )
                 content = body["choices"][0]["message"]["content"]
-                raw = json.loads(content) if isinstance(content, str) else content
+                raw = self._parse_correction_content(content)
                 correction = TranscriptCorrectionResult.model_validate(raw)
                 return CorrectionResult(
                     correction=correction,
@@ -144,6 +144,27 @@ class OpenRouterAnalysisProvider:
         raise AIProviderError(
             "AI_INVALID_RESPONSE", "전문 교정 결과 형식이 올바르지 않습니다.", retryable=True
         )
+
+    @staticmethod
+    def _parse_correction_content(content: Any) -> dict[str, Any]:
+        if isinstance(content, dict):
+            return content
+        if not isinstance(content, str):
+            raise ValueError("correction response is not an object or string")
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            text = "\n".join(lines[1:-1]).strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end <= start:
+                raise
+            parsed = json.loads(text[start : end + 1])
+        if not isinstance(parsed, dict):
+            raise ValueError("correction response JSON is not an object")
+        return parsed
 
     async def _request_schema(
         self, messages: list[dict[str, str]], schema_name: str, schema: dict[str, Any]

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileAudio, FileText, Keyboard, LoaderCircle, Mic, Save, UploadCloud } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { FileUpload } from "@/components/shared/file-upload";
@@ -41,7 +41,6 @@ export function MeetingNewPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const pendingMeetingId = useRef<string | null>(null);
-  const teamTopicInitialized = useRef(false);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [topic, setTopic] = useState("");
@@ -64,13 +63,6 @@ export function MeetingNewPage() {
     queryFn: () => apiService.getQualityOptions(teamId),
     enabled: Boolean(teamId),
   });
-  useEffect(() => {
-    if (!teamTopicInitialized.current && teamQuery.data?.project_topic) {
-      setTopic(teamQuery.data.project_topic);
-      teamTopicInitialized.current = true;
-    }
-  }, [teamQuery.data?.project_topic]);
-
   const metadata = {
     topic: topic.trim(),
     meeting_type: meetingType,

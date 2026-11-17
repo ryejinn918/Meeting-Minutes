@@ -29,6 +29,10 @@ def valid_payload() -> dict[str, Any]:
     }
 
 
+def valid_correction_payload() -> dict[str, Any]:
+    return {"corrected_text": "회의 전문입니다.", "changes": [], "uncertainties": []}
+
+
 class StubClient(AbstractAsyncContextManager["StubClient"]):
     queue: list[httpx.Response | Exception] = []
     requests: list[dict[str, Any]] = []
@@ -120,6 +124,18 @@ async def test_model_rejecting_json_schema_falls_back_to_json_object() -> None:
     assert result.analysis.summary == "핵심 요약"
     assert StubClient.requests[0]["json"]["response_format"]["type"] == "json_schema"
     assert StubClient.requests[1]["json"]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_correction_parser_accepts_markdown_wrapped_json() -> None:
+    content = "```json\n" + json.dumps(valid_correction_payload()) + "\n```"
+    StubClient.queue = [response(200, content)]
+
+    result = await OpenRouterAnalysisProvider(settings()).correct_transcript(
+        "회의 전문입니다.", topic="프로젝트", persona="AI 개발자"
+    )
+
+    assert result.correction.corrected_text == "회의 전문입니다."
 
 
 @pytest.mark.asyncio
