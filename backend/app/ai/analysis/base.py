@@ -46,5 +46,6 @@ class AnalysisProvider(Protocol):
         transcript: str,
         *,
         topic: str,
-        glossary: list[dict[str, Any]],
+        glossary: list[dict[str, Any]] | None = None,
+        persona: str = "general",
     ) -> CorrectionResult: ...

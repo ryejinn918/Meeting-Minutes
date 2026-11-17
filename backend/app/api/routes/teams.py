@@ -7,7 +7,7 @@ from app.core.security import AuthenticatedUser
 from app.core.settings import Settings, get_settings
 from app.db.repositories import MeetFlowRepository
 from app.schemas.invitations import InvitationAcceptResponse, InvitationCreate, InvitationResponse
-from app.schemas.teams import TeamCreate, TeamDetailResponse, TeamResponse
+from app.schemas.teams import TeamCreate, TeamDetailResponse, TeamResponse, TeamUpdate
 from app.services.teams import TeamService
 
 router = APIRouter(prefix="/teams")
@@ -39,6 +39,15 @@ async def get_team(
     team_id: UUID, service: TeamService = Depends(get_service)
 ) -> TeamDetailResponse:
     return await service.detail(team_id)
+
+
+@router.patch("/{team_id}", response_model=TeamDetailResponse)
+async def update_team(
+    team_id: UUID,
+    payload: TeamUpdate,
+    service: TeamService = Depends(get_service),
+) -> TeamDetailResponse:
+    return await service.update(team_id, payload)
 
 
 @router.post("/{team_id}/invitations", response_model=InvitationResponse, status_code=201)

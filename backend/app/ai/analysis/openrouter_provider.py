@@ -86,7 +86,8 @@ class OpenRouterAnalysisProvider:
         transcript: str,
         *,
         topic: str,
-        glossary: list[dict[str, Any]],
+        glossary: list[dict[str, Any]] | None = None,
+        persona: str = "general",
     ) -> CorrectionResult:
         if not self.settings.openrouter_api_key or not self.settings.openrouter_analysis_model:
             raise AIProviderError(
@@ -96,7 +97,12 @@ class OpenRouterAnalysisProvider:
             )
         messages = [
             {"role": "system", "content": CORRECTION_SYSTEM_PROMPT},
-            {"role": "user", "content": build_correction_prompt(transcript, topic, glossary)},
+            {
+                "role": "user",
+                "content": build_correction_prompt(
+                    transcript, topic, glossary, persona=persona
+                ),
+            },
         ]
         total_attempts = self.settings.openrouter_max_retries + 1
         for attempt in range(total_attempts):

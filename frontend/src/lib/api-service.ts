@@ -46,6 +46,7 @@ export const apiService = {
     const team = await apiRequest<TeamDetail>(`/api/v1/teams/${teamId}`);
     return { ...team, members: team.members.map(normalizeMember) };
   },
+  updateTeam: (teamId: string, input: { project_topic: string }) => apiRequest<TeamDetail>(`/api/v1/teams/${teamId}`, { method: "PATCH", body: JSON.stringify(input) }),
   createInvitation: (teamId: string, email: string) =>
     apiRequest<{ id: string; team_id: string; email: string; expires_at: string; accept_url: string | null }>(`/api/v1/teams/${teamId}/invitations`, { method: "POST", body: JSON.stringify({ email, role: "member" }) }),
   getNotifications: () => apiRequest<AppNotification[]>("/api/v1/notifications"),
@@ -69,13 +70,13 @@ export const apiService = {
       method: "PUT",
       body: JSON.stringify({ shares: memberIds.map((user_id) => ({ user_id, can_edit: false })) }),
     }),
-  async createMeeting(input: { team_id: string; title: string; meeting_at: string; source_type?: "direct" | "txt" | "pdf" | "audio"; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
+  async createMeeting(input: { team_id: string; title: string; meeting_at: string; source_type?: "direct" | "txt" | "pdf" | "audio"; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; correction_persona?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>("/api/v1/meetings", {
       method: "POST",
       body: JSON.stringify({ ...input, source_type: input.source_type ?? "direct" }),
     }));
   },
-  async updateMeeting(id: string, input: { title?: string; meeting_at?: string; version: number; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
+  async updateMeeting(id: string, input: { title?: string; meeting_at?: string; version: number; topic?: string; location?: string; meeting_type?: "general" | "project" | "interview" | "workshop"; purpose?: string; project_name?: string; correction_persona?: string; template_id?: string | null; attendees?: Array<{ user_id?: string; external_name?: string; external_organization?: string }>; metadata_confirmed?: boolean }): Promise<Meeting> {
     return normalizeMeeting(await apiRequest<Meeting>(`/api/v1/meetings/${id}`, { method: "PATCH", body: JSON.stringify(input) }));
   },
   async saveTranscript(id: string, text: string): Promise<Meeting> {

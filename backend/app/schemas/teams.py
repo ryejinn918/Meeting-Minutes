@@ -19,6 +19,10 @@ class TeamCreate(BaseModel):
         return self
 
 
+class TeamUpdate(BaseModel):
+    project_topic: str = Field(default="", max_length=500)
+
+
 class TeamScopeResponse(BaseModel):
     id: UUID
     name: str
@@ -36,6 +40,7 @@ class TeamResponse(BaseModel):
     id: UUID
     name: str
     description: str = ""
+    project_topic: str = ""
     member_count: int
     my_role: TeamRole
     created_at: datetime

@@ -166,14 +166,9 @@ class AnalysisService:
                     team = await self.admin_repository.get_team(UUID(meeting["team_id"]))
                 except AppError as exc:
                     self._log_optional_context_failure("team", meeting_id, exc)
-            glossary: list[dict[str, Any]] = []
             questions: list[dict[str, Any]] = []
             template = None
-            if quality_repository and team:
-                try:
-                    glossary = await quality_repository.list_glossary(team)
-                except AppError as exc:
-                    self._log_optional_context_failure("glossary", meeting_id, exc)
+            if quality_repository:
                 try:
                     questions = await quality_repository.list_questions(meeting_id)
                 except AppError as exc:
@@ -195,22 +190,53 @@ class AnalysisService:
                 }
                 if template
                 else None,
-                "glossary": [
-                    {
-                        "term": item["term"],
-                        "preferred_term": item["preferred_term"],
-                    }
-                    for item in glossary
-                ],
+                "correction_persona": meeting.get("correction_persona", "general"),
+                "team_project_topic": (team or {}).get("project_topic", ""),
                 "confirmed_answers": [
                     {"question": item["question"], "answer": item.get("answer")}
                     for item in questions
                     if item.get("status") == "answered"
                 ],
             }
+            team_topic = (team or {}).get("project_topic", "").strip()
+            meeting_topic = meeting.get("topic", "").strip()
+            correction_topic = "\n".join(
+                value for value in (
+                    f"팀 프로젝트 주제: {team_topic}" if team_topic else "",
+                    f"이번 회의 주제: {meeting_topic}" if meeting_topic else "",
+                ) if value
+            )
+            stage = "provider_correct_transcript"
+            correction_result = await self.provider.correct_transcript(
+                text,
+                topic=correction_topic,
+                persona=meeting.get("correction_persona", "general"),
+            )
+            corrected_text = correction_result.correction.corrected_text.strip() or text
+            if quality_repository:
+                stage = "save_transcript_correction"
+                await quality_repository.save_correction(
+                    meeting_id=meeting_id,
+                    transcript_id=transcript_id,
+                    corrected_text=corrected_text,
+                    changes=[
+                        item.model_dump(mode="json")
+                        for item in correction_result.correction.changes
+                    ],
+                    uncertainties=[
+                        item.model_dump(mode="json")
+                        for item in correction_result.correction.uncertainties
+                    ],
+                    context={
+                        "topic": correction_topic,
+                        "persona": meeting.get("correction_persona", "general"),
+                    },
+                    provider=correction_result.provider,
+                    model=correction_result.model,
+                )
             stage = "provider_analyze"
             result = await self.provider.analyze(
-                text, meeting_date=meeting_at.date(), context=context
+                corrected_text, meeting_date=meeting_at.date(), context=context
             )
             output = result.analysis.model_dump(mode="json")
             usage = dict(result.usage)

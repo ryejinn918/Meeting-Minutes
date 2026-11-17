@@ -8,7 +8,13 @@ from app.core.security import AuthenticatedUser
 from app.core.settings import Settings, get_settings
 from app.db.repositories import MeetFlowRepository
 from app.schemas.invitations import InvitationAcceptResponse, InvitationCreate, InvitationResponse
-from app.schemas.teams import TeamCreate, TeamDetailResponse, TeamMemberResponse, TeamResponse
+from app.schemas.teams import (
+    TeamCreate,
+    TeamDetailResponse,
+    TeamMemberResponse,
+    TeamResponse,
+    TeamUpdate,
+)
 from app.services.authorization import AuthorizationService
 
 
@@ -141,12 +147,22 @@ class TeamService:
             members=members,
         )
 
+    async def update(self, team_id: UUID, payload: TeamUpdate) -> TeamDetailResponse:
+        membership = await self.authorization.require_team_member(team_id)
+        if membership["role"] not in {"owner", "admin"}:
+            raise AppError(403, "TEAM_MANAGER_REQUIRED", "팀 관리자 권한이 필요합니다.")
+        team = await self.repository.update_team(team_id, payload.project_topic.strip())
+        if team is None:
+            raise AppError(404, "TEAM_NOT_FOUND", "팀을 찾을 수 없습니다.")
+        return await self.detail(team_id)
+
     @staticmethod
     def _response(team: dict, *, member_count: int, my_role: str) -> TeamResponse:
         return TeamResponse(
             id=team["id"],
             name=team["name"],
             description=team.get("description", ""),
+            project_topic=team.get("project_topic", ""),
             created_at=team["created_at"],
             member_count=member_count,
             my_role=my_role,

@@ -53,6 +53,7 @@ class MeetingService:
                 "meeting_type": payload.meeting_type,
                 "purpose": payload.purpose.strip(),
                 "project_name": payload.project_name.strip(),
+                "correction_persona": payload.correction_persona.strip(),
                 "template_id": str(payload.template_id) if payload.template_id else None,
                 "metadata_confirmed_at": datetime.now(UTC).isoformat()
                 if payload.metadata_confirmed
@@ -125,6 +126,8 @@ class MeetingService:
             exclude_none=True,
             exclude={"version", "attendees", "metadata_confirmed"},
         )
+        if "correction_persona" in values and values["correction_persona"] is not None:
+            values["correction_persona"] = values["correction_persona"].strip()
         if "meeting_at" in values:
             values["meeting_at"] = values["meeting_at"].isoformat()
         if payload.metadata_confirmed is not None:

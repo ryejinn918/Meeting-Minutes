@@ -41,6 +41,7 @@ export interface Team {
   id: string;
   name: string;
   description: string;
+  project_topic?: string;
   member_count: number;
   my_role: TeamRole;
   created_at?: string;
@@ -123,6 +124,7 @@ export interface Meeting {
   meeting_type: MeetingType;
   purpose: string;
   project_name: string;
+  correction_persona?: string;
   template_id: string | null;
   metadata_confirmed_at: string | null;
   attendees: MeetingAttendee[];

@@ -54,15 +54,10 @@ class MockAnalysisProvider:
         transcript: str,
         *,
         topic: str,
-        glossary: list[dict[str, object]],
+        glossary: list[dict[str, object]] | None = None,
+        persona: str = "general",
     ) -> CorrectionResult:
         corrected = transcript
-        for item in glossary:
-            preferred = str(item.get("preferred_term") or "")
-            candidates = [str(item.get("term") or ""), *[str(v) for v in item.get("aliases", [])]]
-            for candidate in candidates:
-                if candidate and preferred:
-                    corrected = corrected.replace(candidate, preferred)
         return CorrectionResult(
             correction=TranscriptCorrectionResult(
                 corrected_text=corrected,
@@ -71,5 +66,5 @@ class MockAnalysisProvider:
             ),
             provider="mock",
             model="mock/deepseek",
-            usage={"mock": True, "topic_supplied": bool(topic), "glossary_count": len(glossary)},
+            usage={"mock": True, "topic_supplied": bool(topic), "persona": persona},
         )

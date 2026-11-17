@@ -17,6 +17,7 @@ class MeetingCreate(BaseModel):
     meeting_type: MeetingType = "general"
     purpose: str = Field(default="", max_length=1000)
     project_name: str = Field(default="", max_length=300)
+    correction_persona: str = Field(default="", max_length=80)
     template_id: UUID | None = None
     attendees: list[AttendeeInput] = Field(default_factory=list, max_length=100)
     metadata_confirmed: bool = False
@@ -31,6 +32,7 @@ class MeetingUpdate(BaseModel):
     meeting_type: MeetingType | None = None
     purpose: str | None = Field(default=None, max_length=1000)
     project_name: str | None = Field(default=None, max_length=300)
+    correction_persona: str | None = Field(default=None, max_length=80)
     template_id: UUID | None = None
     attendees: list[AttendeeInput] | None = Field(default=None, max_length=100)
     metadata_confirmed: bool | None = None
@@ -148,6 +150,7 @@ class MeetingResponse(BaseModel):
     meeting_type: MeetingType = "general"
     purpose: str = ""
     project_name: str = ""
+    correction_persona: str = ""
     template_id: UUID | None = None
     metadata_confirmed_at: datetime | None = None
     attendees: list[AttendeeResponse] = Field(default_factory=list)

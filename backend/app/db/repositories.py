@@ -9,7 +9,7 @@ MEETING_SELECT = (
     "id,team_id,title,meeting_at,source_type,created_by,processing_status,"
     "current_transcript_id,current_notes_id,version,topic,location,meeting_type,"
     "purpose,project_name,template_id,metadata_confirmed_at,review_status,"
-    "approved_at,approved_by,approval_version"
+    "approved_at,approved_by,approval_version,correction_persona"
 )
 
 
@@ -223,7 +223,7 @@ class MeetFlowRepository:
             params={
                 "select": (
                     "team_id,role,status,teams!inner("
-                    "id,name,description,created_at,organization_id,department_id,"
+                    "id,name,description,project_topic,created_at,organization_id,department_id,"
                     "organizations!teams_organization_id_fkey(id,name),"
                     "departments!teams_department_scope_fk(id,name))"
                 ),
@@ -240,7 +240,7 @@ class MeetFlowRepository:
             "teams",
             params={
                 "select": (
-                    "id,name,description,created_at,organization_id,department_id,"
+                    "id,name,description,project_topic,created_at,organization_id,department_id,"
                     "organizations!teams_organization_id_fkey(id,name),"
                     "departments!teams_department_scope_fk(id,name)"
                 ),
@@ -248,6 +248,16 @@ class MeetFlowRepository:
             },
         )
         return rows[0] if rows else None
+
+    async def update_team(self, team_id: UUID, project_topic: str) -> dict[str, Any] | None:
+        await self.client.request(
+            "PATCH",
+            "teams",
+            params={"id": f"eq.{team_id}"},
+            json={"project_topic": project_topic},
+            prefer="return=minimal",
+        )
+        return await self.get_team(team_id)
 
     async def list_team_members(self, team_id: UUID) -> list[dict[str, Any]]:
         rows, _ = await self.client.request(

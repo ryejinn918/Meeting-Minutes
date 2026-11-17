@@ -75,7 +75,7 @@ def test_answered_question_requires_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mock_correction_uses_only_supplied_fake_glossary() -> None:
+async def test_mock_correction_is_conservative_without_glossary() -> None:
     result = await MockAnalysisProvider().correct_transcript(
         "가상별칭을 검토했다.",
         topic="가상 프로젝트",
@@ -87,7 +87,7 @@ async def test_mock_correction_uses_only_supplied_fake_glossary() -> None:
             }
         ],
     )
-    assert result.correction.corrected_text == "가상 표준 용어을 검토했다."
+    assert result.correction.corrected_text == "가상별칭을 검토했다."
     assert result.usage["mock"] is True
 
 

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileAudio, FileText, Keyboard, LoaderCircle, Mic, Save, UploadCloud } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { FileUpload } from "@/components/shared/file-upload";
@@ -41,9 +41,11 @@ export function MeetingNewPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const pendingMeetingId = useRef<string | null>(null);
+  const teamTopicInitialized = useRef(false);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [topic, setTopic] = useState("");
+  const [persona, setPersona] = useState("");
   const meetingType = "general" as const;
   const [templateId, setTemplateId] = useState("");
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
@@ -62,11 +64,18 @@ export function MeetingNewPage() {
     queryFn: () => apiService.getQualityOptions(teamId),
     enabled: Boolean(teamId),
   });
+  useEffect(() => {
+    if (!teamTopicInitialized.current && teamQuery.data?.project_topic) {
+      setTopic(teamQuery.data.project_topic);
+      teamTopicInitialized.current = true;
+    }
+  }, [teamQuery.data?.project_topic]);
 
   const metadata = {
     topic: topic.trim(),
     meeting_type: meetingType,
     template_id: templateId.startsWith("builtin-") || !templateId ? null : templateId,
+    correction_persona: persona.trim(),
     attendees: attendeeIds.map((user_id) => ({ user_id })),
     metadata_confirmed: true,
   };
@@ -158,6 +167,7 @@ export function MeetingNewPage() {
         <label className="block text-sm font-semibold text-slate-700">회의 제목<Input className="mt-2" maxLength={100} onChange={(event) => setTitle(event.target.value)} placeholder="예: 11월 주간 프로젝트 회의" value={title} /></label>
         <label className="block text-sm font-semibold text-slate-700">회의 주제<Input className="mt-2" maxLength={500} onChange={(event) => setTopic(event.target.value)} placeholder="이번 회의에서 다룰 핵심 주제" value={topic} /></label>
         <label className="block text-sm font-semibold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDate(event.target.value)} type="date" value={date} /></label>
+        <label className="block text-sm font-semibold text-slate-700">전사 교정 페르소나<Input className="mt-2" maxLength={80} onChange={(event) => setPersona(event.target.value)} placeholder="예: 한국어 기술 문서에 익숙한 시니어 AI 개발자" value={persona} /><span className="mt-1 block text-xs font-normal leading-5 text-slate-500">선택 입력입니다. 비워두면 팀 프로젝트 주제만 참고하고, 명확한 전사 오류만 보수적으로 교정합니다.</span></label>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm font-semibold text-slate-700 sm:col-span-2">회의록 템플릿<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setTemplateId(event.target.value)} value={templateId}><option value="">기본 템플릿</option>{qualityQuery.data?.templates.filter((item) => item.meeting_type === "project" || item.meeting_type === "interview").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         </div>
