@@ -29,6 +29,29 @@ def valid_payload() -> dict[str, Any]:
     }
 
 
+def sparse_payload() -> dict[str, Any]:
+    payload = valid_payload()
+    payload["key_discussions"] = [
+        {"text": "프로젝트 범위\n- 프로젝트 범위", "evidence": None}
+    ]
+    return payload
+
+
+def detailed_payload() -> dict[str, Any]:
+    payload = valid_payload()
+    payload["key_discussions"] = [
+        {
+            "text": (
+                "프로젝트 범위\n"
+                "- 파일럿 범위와 우선순위 확정 필요\n"
+                "- 일정 제약을 고려한 단계적 추진 검토"
+            ),
+            "evidence": None,
+        }
+    ]
+    return payload
+
+
 def valid_correction_payload() -> dict[str, Any]:
     return {"corrected_text": "회의 전문입니다.", "changes": [], "uncertainties": []}
 
@@ -112,6 +135,24 @@ async def test_analysis_prompt_requests_example_style_agenda_detail() -> None:
     assert "배경·목적" in prompt
     assert "구현 범위와 기간(목업·PoC)" in prompt
     assert "원문에 없는 사실" in prompt
+
+
+@pytest.mark.asyncio
+async def test_sparse_analysis_gets_one_detail_expansion_pass() -> None:
+    StubClient.queue = [
+        response(200, json.dumps(sparse_payload(), ensure_ascii=False)),
+        response(200, json.dumps(detailed_payload(), ensure_ascii=False)),
+    ]
+
+    result = await OpenRouterAnalysisProvider(settings()).analyze(
+        "회의 전사 원문 " * 300,
+        meeting_date=__import__("datetime").date(2026, 11, 11),
+    )
+
+    assert "파일럿 범위와 우선순위 확정 필요" in result.analysis.key_discussions[0].text
+    assert len(StubClient.requests) == 2
+    assert "draft_analysis" in StubClient.requests[1]["json"]["messages"][1]["content"]
+    assert result.usage["completion_tokens"] == 20
 
 
 @pytest.mark.asyncio

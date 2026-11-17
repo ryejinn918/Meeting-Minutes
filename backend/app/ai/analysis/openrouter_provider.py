@@ -12,6 +12,7 @@ from app.ai.prompts import (
     SYSTEM_PROMPT,
     build_analysis_prompt,
     build_correction_prompt,
+    build_detail_expansion_prompt,
 )
 from app.core.settings import Settings
 from app.schemas.analysis import MeetingAnalysis
@@ -53,7 +54,27 @@ class OpenRouterAnalysisProvider:
         total_attempts = self.settings.openrouter_max_retries + 1
         for attempt in range(total_attempts):
             try:
-                return await self._request(messages)
+                result = await self._request(messages)
+                if self._needs_detail_expansion(transcript, result.analysis):
+                    expanded_messages = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": build_detail_expansion_prompt(
+                                transcript,
+                                meeting_date,
+                                result.analysis.model_dump(mode="json"),
+                                context=context,
+                            ),
+                        },
+                    ]
+                    try:
+                        expanded = await self._request(expanded_messages)
+                    except AIProviderError:
+                        # Keep a valid first-pass result if expansion is unavailable.
+                        return result
+                    return self._combine_usage(result, expanded)
+                return result
             except AIProviderError as exc:
                 # Some OpenRouter models reject strict JSON Schema while still
                 # supporting JSON mode. Fall back once; the response is still
@@ -80,6 +101,31 @@ class OpenRouterAnalysisProvider:
                 await asyncio.sleep(0.25 * (2**attempt))
         assert last_error is not None
         raise last_error
+
+    @staticmethod
+    def _needs_detail_expansion(transcript: str, analysis: MeetingAnalysis) -> bool:
+        if len(transcript) < 500 or not analysis.key_discussions:
+            return False
+        for item in analysis.key_discussions:
+            lines = [line.strip(" -*•") for line in item.text.splitlines() if line.strip()]
+            details = lines[1:]
+            if len(details) < 2 or (details and details[0].casefold() == lines[0].casefold()):
+                return True
+        return False
+
+    @staticmethod
+    def _combine_usage(first: AnalysisResult, second: AnalysisResult) -> AnalysisResult:
+        usage = dict(first.usage)
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            if key in second.usage:
+                usage[key] = int(usage.get(key, 0)) + int(second.usage[key])
+        return AnalysisResult(
+            analysis=second.analysis,
+            provider=second.provider,
+            model=second.model,
+            usage=usage,
+            request_id=second.request_id or first.request_id,
+        )
 
     async def correct_transcript(
         self,
