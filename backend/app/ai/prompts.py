@@ -58,6 +58,33 @@ MEETING_REPORT_STYLE = "\n".join(
 )
 
 
+# This contract is intentionally explicit because the legacy style guidance
+# allowed models to put the whole discussion into one long heading.
+STRICT_MEETING_REPORT_STYLE = "\n".join(
+    [
+        "실무 회의록 출력 계약:",
+        "- key_discussions는 전사에서 실제로 다뤄진 핵심 주제별로 세분화하세요.",
+        "  안건 수는 회의의 복잡도와 논의 범위에 따라 결정하세요.",
+        "- 각 key_discussions.text의 첫 줄은 10~25자 안팎의 짧은 명사형 제목만 작성하세요.",
+        "  콜론·마침표·배경·의견·결론을 제목에 붙이지 마세요.",
+        "- 제목 다음 줄부터 '- '로 시작하는 불릿을 여러 개 작성하세요.",
+        "  배경·목적, 현황, 핵심 의견, 제약사항, 대안·이견, 향후 방향을 원문에 근거해 포함하세요.",
+        "- 불릿은 '...필요/방향/검토/예정/확인/가능/어려움/하기로 함' 등 자연스러운",
+        "  어구형으로 끝내세요.",
+        "  했습니다/합니다/되었습니다/논의했습니다/설명했습니다 종결은 사용하지 마세요.",
+        "- 원문에 없는 사실·일정·담당자·합의를 만들지 말고 수치·기술명·조직명·사례를 보존하세요.",
+        "- summary는 목적·범위·핵심 쟁점·전체 흐름을 2~5개의 충분한 문장으로 작성하세요.",
+        "  decisions는 확정·합의된 내용만, follow_ups는 미해결 검토 과제만 작성하세요.",
+        "- action_items.description도 실제 실행 과제를 명사형·어구형으로 작성하세요.",
+        "  담당자·기한은 원문에 명시된 경우에만 기록하세요.",
+        "예시 제목: 전략 보고서 구성 및 스토리라인 / AI 기술 동향 분석 방향",
+        "구현 범위와 기간(목업·PoC)",
+        "프로세스 구조와 지식 연동 이슈 / 스토리라인 순서 조정",
+        "원문에 없는 사실은 추가하지 마세요.",
+    ]
+)
+
+
 def build_analysis_prompt(
     transcript: str,
     meeting_date: date,
@@ -69,7 +96,7 @@ def build_analysis_prompt(
     )
     return (
         f"{context_block}"
-        f"{MEETING_REPORT_STYLE}\n\n"
+        f"{STRICT_MEETING_REPORT_STYLE}\n\n"
         f"회의 날짜: {meeting_date.isoformat()}\n\n"
         "다음 회의 전문을 핵심 요약, 주요 논의사항, 확정된 결정사항, "
         "액션아이템, 후속 논의사항으로 구조화하세요.\n"

@@ -10,6 +10,7 @@ from app.ai.pipeline import AnalysisService
 from app.core.errors import AppError
 from app.core.security import AuthenticatedUser
 from app.core.settings import Settings
+from app.schemas.analysis import MeetingAnalysis
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
 TEAM_ID = UUID("22222222-2222-4222-8222-222222222222")
@@ -118,6 +119,33 @@ def service(
         provider=MockAnalysisProvider(),
         settings=Settings(_env_file=None, ai_mode="mock"),
     )
+
+
+def test_analysis_normalizes_long_discussion_heading_and_preserves_details() -> None:
+    result = MeetingAnalysis.model_validate(
+        {
+            "summary": "회의 목적과 추진 방향을 정리한 요약.",
+            "key_discussions": [
+                {
+                    "text": (
+                        "전략 보고서 작성 프로세스와 기획안 구성: 프로젝트 배경과 범위, "
+                        "보고서 산출물 구성을 구체화할 필요."
+                    ),
+                    "evidence": None,
+                }
+            ],
+            "decisions": [],
+            "action_items": [],
+            "follow_ups": [],
+        }
+    )
+
+    text = result.key_discussions[0].text
+    heading, detail = text.split("\n", 1)
+    assert len(heading) <= 25
+    assert ":" not in heading
+    assert detail.startswith("- ")
+    assert "보고서 산출물 구성" in detail
 
 
 @pytest.mark.asyncio
