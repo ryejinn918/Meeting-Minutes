@@ -17,6 +17,20 @@ class AnalysisListItem(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class DetailedDiscussionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=100)
+    details: list[str] = Field(min_length=2, max_length=30)
+
+    @field_validator("title", "details")
+    @classmethod
+    def strip_values(cls, value: str | list[str]) -> str | list[str]:
+        if isinstance(value, str):
+            return value.strip()
+        return [item.strip() for item in value if item.strip()]
+
+
 def _normalize_discussion_text(value: str) -> str:
     """Keep agenda headings short while preserving the generated detail."""
     lines = [line.strip() for line in value.replace("\r\n", "\n").split("\n") if line.strip()]
@@ -116,6 +130,16 @@ class AnalysisActionItem(BaseModel):
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         return value.strip() if isinstance(value, str) else value
+
+
+class DetailedMeetingAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=5000)
+    key_discussions: list[DetailedDiscussionItem] = Field(max_length=50)
+    decisions: list[AnalysisListItem] = Field(max_length=50)
+    action_items: list[AnalysisActionItem] = Field(max_length=100)
+    follow_ups: list[AnalysisListItem] = Field(max_length=50)
 
 
 class MeetingAnalysis(BaseModel):

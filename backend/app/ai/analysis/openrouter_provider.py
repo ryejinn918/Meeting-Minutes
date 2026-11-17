@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 import httpx
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.ai.analysis.base import AIProviderError, AnalysisResult, CorrectionResult
 from app.ai.prompts import (
@@ -15,7 +15,7 @@ from app.ai.prompts import (
     build_detail_expansion_prompt,
 )
 from app.core.settings import Settings
-from app.schemas.analysis import MeetingAnalysis
+from app.schemas.analysis import DetailedMeetingAnalysis, MeetingAnalysis
 from app.schemas.quality import TranscriptCorrectionResult
 
 
@@ -69,11 +69,13 @@ class OpenRouterAnalysisProvider:
                         },
                     ]
                     try:
-                        expanded = await self._request(expanded_messages)
+                        expanded = await self._request(
+                            expanded_messages, analysis_model=DetailedMeetingAnalysis
+                        )
                     except AIProviderError:
                         # Keep a valid first-pass result if expansion is unavailable.
                         return result
-                    return self._combine_usage(result, expanded)
+                    return self._combine_usage(result, self._flatten_detailed(expanded))
                 return result
             except AIProviderError as exc:
                 # Some OpenRouter models reject strict JSON Schema while still
@@ -106,12 +108,19 @@ class OpenRouterAnalysisProvider:
     def _needs_detail_expansion(transcript: str, analysis: MeetingAnalysis) -> bool:
         if len(transcript) < 500 or not analysis.key_discussions:
             return False
+        # For longer meetings, always run the coverage pass. The first pass is
+        # intentionally a compact outline; it is not sufficient to preserve
+        # all distinct interview points, examples, constraints, and numbers.
+        if len(transcript) >= 3_000:
+            return True
+        total_detail_chars = 0
         for item in analysis.key_discussions:
             lines = [line.strip(" -*•") for line in item.text.splitlines() if line.strip()]
             details = lines[1:]
+            total_detail_chars += sum(len(detail) for detail in details)
             if len(details) < 2 or (details and details[0].casefold() == lines[0].casefold()):
                 return True
-        return False
+        return total_detail_chars < 1_200
 
     @staticmethod
     def _combine_usage(first: AnalysisResult, second: AnalysisResult) -> AnalysisResult:
@@ -125,6 +134,32 @@ class OpenRouterAnalysisProvider:
             model=second.model,
             usage=usage,
             request_id=second.request_id or first.request_id,
+        )
+
+    @staticmethod
+    def _flatten_detailed(result: AnalysisResult) -> AnalysisResult:
+        detailed = result.analysis
+        if not isinstance(detailed, DetailedMeetingAnalysis):
+            return result
+        analysis = MeetingAnalysis(
+            summary=detailed.summary,
+            key_discussions=[
+                {
+                    "text": item.title + "\n" + "\n".join(f"- {detail}" for detail in item.details),
+                    "evidence": None,
+                }
+                for item in detailed.key_discussions
+            ],
+            decisions=detailed.decisions,
+            action_items=detailed.action_items,
+            follow_ups=detailed.follow_ups,
+        )
+        return AnalysisResult(
+            analysis=analysis,
+            provider=result.provider,
+            model=result.model,
+            usage=result.usage,
+            request_id=result.request_id,
         )
 
     async def correct_transcript(
@@ -272,7 +307,11 @@ class OpenRouterAnalysisProvider:
             ) from exc
 
     async def _request(
-        self, messages: list[dict[str, str]], *, json_schema: bool = True
+        self,
+        messages: list[dict[str, str]],
+        *,
+        json_schema: bool = True,
+        analysis_model: type[BaseModel] = MeetingAnalysis,
     ) -> AnalysisResult:
         payload = {
             "model": self.settings.openrouter_analysis_model,
@@ -285,7 +324,7 @@ class OpenRouterAnalysisProvider:
                     "json_schema": {
                         "name": "meeting_analysis",
                         "strict": True,
-                        "schema": MeetingAnalysis.model_json_schema(),
+                        "schema": analysis_model.model_json_schema(),
                     },
                 }
                 if json_schema
@@ -339,7 +378,7 @@ class OpenRouterAnalysisProvider:
             body: dict[str, Any] = response.json()
             content = body["choices"][0]["message"]["content"]
             raw_analysis = json.loads(content) if isinstance(content, str) else content
-            analysis = MeetingAnalysis.model_validate(raw_analysis)
+            analysis = analysis_model.model_validate(raw_analysis)
         except (ValueError, KeyError, IndexError, TypeError, ValidationError) as exc:
             raise AIProviderError(
                 "AI_INVALID_RESPONSE",

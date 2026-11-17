@@ -41,12 +41,11 @@ def detailed_payload() -> dict[str, Any]:
     payload = valid_payload()
     payload["key_discussions"] = [
         {
-            "text": (
-                "프로젝트 범위\n"
-                "- 파일럿 범위와 우선순위 확정 필요\n"
-                "- 일정 제약을 고려한 단계적 추진 검토"
-            ),
-            "evidence": None,
+            "title": "프로젝트 범위",
+            "details": [
+                "파일럿 범위와 우선순위 확정 필요",
+                "일정 제약을 고려한 단계적 추진 검토",
+            ],
         }
     ]
     return payload

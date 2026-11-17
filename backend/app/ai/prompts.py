@@ -127,10 +127,17 @@ def build_detail_expansion_prompt(
     )
     return (
         f"{context_block}{STRICT_MEETING_REPORT_STYLE}\n\n"
-        "다음은 1차 회의록 초안입니다. 제목만 남거나 제목을 반복하는 불릿이 있으면 "
+        "다음은 1차 회의록 초안입니다. 긴 전사에서는 이 초안을 요약하는 것이 아니라 "
+        "전체 원문을 다시 대조하여 실제로 언급된 고유한 의견·사례·수치·일정·제약·대안을 "
+        "가능한 한 빠짐없이 보존하세요. 반복 발언만 통합하고, 서로 다른 관점이나 논의 흐름은 "
+        "삭제하지 마세요. 제목만 남거나 제목을 반복하는 불릿이 있으면 "
         "전사 원문에서 근거가 확인되는 세부 논의로 보완하세요. 각 안건에는 실제로 언급된 "
         "배경·의견·제약·대안·향후 방향을 빠짐없이 배치하고, 서로 다른 논점은 별도 불릿으로 "
         "분리하세요. 원문에 없는 내용은 추가하지 말고, 근거가 부족한 항목은 억지로 늘리지 마세요.\n"
+        "이번 응답의 key_discussions는 반드시 {title: 짧은 명사형 제목, details: 문자열 배열} "
+        "구조로 반환하세요. 실질적인 안건의 details는 원문에 근거한 서로 다른 내용 "
+        "2개 이상(가능하면 3~10개)으로 "
+        "작성하고, 제목을 details에 복사하지 마세요.\n"
         f"회의 날짜: {meeting_date.isoformat()}\n"
         f"<draft_analysis>\n{json.dumps(draft, ensure_ascii=False)}\n</draft_analysis>\n"
         f"<meeting_transcript>\n{transcript}\n</meeting_transcript>"
