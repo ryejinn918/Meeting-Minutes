@@ -9,6 +9,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { apiService } from "@/lib/api-service";
 import { queryKeys } from "@/lib/query-keys";
 
+const STALE_JOB_THRESHOLD_MS = 10 * 60 * 1000;
+
 export function ProcessingPage() {
   const { id = "" } = useParams();
   const [searchParams] = useSearchParams();
@@ -55,7 +57,14 @@ export function ProcessingPage() {
   const job = jobQuery.data;
   const failed = job?.status === "failed";
   const completed = job?.status === "succeeded";
-  const stale = !failed && !completed && Boolean(job?.retryable);
+  const active = job?.status === "queued" || job?.status === "processing";
+  const jobTimestamp = job?.started_at ?? job?.created_at;
+  const stale = Boolean(
+    active &&
+      job?.retryable &&
+      jobTimestamp &&
+      Date.now() - Date.parse(jobTimestamp) >= STALE_JOB_THRESHOLD_MS,
+  );
   const isFileJob = job?.job_type === "extract" || job?.job_type === "transcribe";
   const title = isFileJob
     ? failed ? "파일을 처리하지 못했어요." : completed ? "회의 내용을 모두 가져왔어요." : job?.job_type === "transcribe" ? "녹음된 회의 내용을 글로 옮기고 있어요." : "문서에서 회의 내용을 가져오고 있어요."
