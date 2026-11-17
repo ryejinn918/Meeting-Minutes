@@ -148,6 +148,31 @@ def test_analysis_normalizes_long_discussion_heading_and_preserves_details() -> 
     assert "보고서 산출물 구성" in detail
 
 
+def test_analysis_merges_repeated_agenda_details_without_dropping_distinct_points() -> None:
+    result = MeetingAnalysis.model_validate(
+        {
+            "summary": "회의 핵심 흐름 요약.",
+            "key_discussions": [
+                {
+                    "text": "프로젝트 범위\n- 파일럿 범위 확정 필요\n- 파일럿 범위 확정 필요",
+                    "evidence": None,
+                },
+                {
+                    "text": "프로젝트 범위\n- 일정 제약으로 단계적 추진 검토",
+                    "evidence": None,
+                },
+            ],
+            "decisions": [],
+            "action_items": [],
+            "follow_ups": [],
+        }
+    )
+
+    assert len(result.key_discussions) == 1
+    assert result.key_discussions[0].text.count("파일럿 범위 확정 필요") == 1
+    assert "단계적 추진 검토" in result.key_discussions[0].text
+
+
 @pytest.mark.asyncio
 async def test_success_preserves_transcript_and_separates_run_from_editable_notes() -> None:
     repository = FakeMeetingRepository()

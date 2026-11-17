@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_timeout_seconds: float = 45.0
     openrouter_max_retries: int = 1
-    openrouter_max_output_tokens: int = 2500
+    openrouter_max_output_tokens: int = 5000
     ai_mode: str = "mock"
     ai_max_transcript_chars: int = 120_000
     ai_stale_job_seconds: int = 300

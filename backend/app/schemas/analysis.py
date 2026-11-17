@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class AnalysisListItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=1, max_length=5000)
     evidence: str | None = Field(max_length=1000)
 
     @field_validator("text", "evidence")
@@ -50,6 +50,59 @@ def _normalize_discussion_text(value: str) -> str:
     return heading
 
 
+def _discussion_parts(value: str) -> tuple[str, list[str]]:
+    lines = [line.strip() for line in value.splitlines() if line.strip()]
+    if not lines:
+        return value.strip(), []
+    heading = lines[0].lstrip("-•* ").strip()
+    details = [line.lstrip("-•* ").strip() for line in lines[1:] if line.strip()]
+    return heading, details
+
+
+def _semantic_key(value: str) -> str:
+    return re.sub(r"[^0-9a-zA-Z가-힣]+", "", value.casefold())
+
+
+def _merge_repeated_discussions(items: list[AnalysisListItem]) -> list[AnalysisListItem]:
+    """Merge only repeated agenda headings/details; preserve distinct viewpoints."""
+    merged: list[AnalysisListItem] = []
+    seen_details: set[str] = set()
+    for item in items:
+        heading, details = _discussion_parts(item.text)
+        unique_details = []
+        for detail in details:
+            key = _semantic_key(detail)
+            if key and key in seen_details:
+                continue
+            if key:
+                seen_details.add(key)
+            unique_details.append(detail)
+        detail_text = "\n".join(f"- {detail}" for detail in unique_details)
+        normalized = _normalize_discussion_text(
+            heading + (f"\n{detail_text}" if detail_text else "")
+        )
+        existing = next(
+            (
+                candidate
+                for candidate in merged
+                if _semantic_key(_discussion_parts(candidate.text)[0])
+                == _semantic_key(heading)
+            ),
+            None,
+        )
+        if existing is None:
+            merged.append(item.model_copy(update={"text": normalized}))
+        elif unique_details:
+            old_heading, old_details = _discussion_parts(existing.text)
+            combined = old_heading + "\n" + "\n".join(
+                [f"- {detail}" for detail in old_details + unique_details]
+            )
+            merged[merged.index(existing)] = existing.model_copy(
+                update={"text": _normalize_discussion_text(combined)}
+            )
+    return merged
+
+
 class AnalysisActionItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -82,7 +135,8 @@ class MeetingAnalysis(BaseModel):
     @field_validator("key_discussions")
     @classmethod
     def normalize_key_discussions(cls, value: list[AnalysisListItem]) -> list[AnalysisListItem]:
-        return [
+        normalized = [
             item.model_copy(update={"text": _normalize_discussion_text(item.text)})
             for item in value
         ]
+        return _merge_repeated_discussions(normalized)
