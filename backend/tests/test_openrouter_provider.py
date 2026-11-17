@@ -99,6 +99,22 @@ async def test_parses_structured_response_with_null_fields_and_empty_arrays() ->
 
 
 @pytest.mark.asyncio
+async def test_analysis_prompt_requests_example_style_agenda_detail() -> None:
+    StubClient.queue = [response(200, json.dumps(valid_payload()))]
+
+    await OpenRouterAnalysisProvider(settings()).analyze(
+        "구현 범위와 일정에 대한 회의 전문",
+        meeting_date=__import__("datetime").date(2026, 11, 11),
+    )
+
+    prompt = StubClient.requests[0]["json"]["messages"][1]["content"]
+    assert "핵심 주제별로 세분화" in prompt
+    assert "배경·목적" in prompt
+    assert "구현 범위와 기간(목업·PoC)" in prompt
+    assert "원문에 없는 사실" in prompt
+
+
+@pytest.mark.asyncio
 async def test_invalid_json_is_rejected() -> None:
     StubClient.queue = [response(200, "not-json")]
 
