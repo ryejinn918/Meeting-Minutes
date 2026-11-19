@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.quality import AttendeeInput, AttendeeResponse, MeetingType, QuestionResponse
 
@@ -22,6 +22,12 @@ class MeetingCreate(BaseModel):
     attendees: list[AttendeeInput] = Field(default_factory=list, max_length=100)
     metadata_confirmed: bool = False
 
+    @field_validator("correction_persona")
+    @classmethod
+    def normalize_correction_persona(cls, value: str) -> str:
+        """Keep the DB constraint valid when the optional persona is blank."""
+        return value.strip() or "general"
+
 
 class MeetingUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
@@ -36,6 +42,13 @@ class MeetingUpdate(BaseModel):
     template_id: UUID | None = None
     attendees: list[AttendeeInput] | None = Field(default=None, max_length=100)
     metadata_confirmed: bool | None = None
+
+    @field_validator("correction_persona")
+    @classmethod
+    def normalize_correction_persona(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or "general"
 
     @model_validator(mode="after")
     def require_change(self) -> "MeetingUpdate":
