@@ -337,7 +337,11 @@ class QualityRepository:
         return rows[0]
 
     async def upsert_voice_profile(
-        self, team_id: UUID, user_id: UUID, label: str, consented: bool
+        self, team_id: UUID, user_id: UUID, label: str, consented: bool,
+        sample_object_path: str | None = None,
+        sample_mime_type: str | None = None,
+        sample_size_bytes: int | None = None,
+        sample_sha256: str | None = None,
     ) -> dict[str, Any]:
         profile_id = uuid4()
         await self.client.request(
@@ -345,7 +349,14 @@ class QualityRepository:
             json={"id": str(profile_id), "team_id": str(team_id), "user_id": str(user_id),
                   "label": label,
                   "consented_at": datetime.now(UTC).isoformat() if consented else None,
-                  "revoked_at": None if consented else datetime.now(UTC).isoformat()},
+                  "revoked_at": None if consented else datetime.now(UTC).isoformat(),
+                  "sample_object_path": sample_object_path,
+                  "sample_mime_type": sample_mime_type,
+                  "sample_size_bytes": sample_size_bytes,
+                  "sample_sha256": sample_sha256,
+                  "sample_uploaded_at": (
+                      datetime.now(UTC).isoformat() if sample_object_path else None
+                  )},
             params={"on_conflict": "team_id,user_id"},
             prefer="resolution=merge-duplicates,return=minimal",
         )
@@ -353,7 +364,11 @@ class QualityRepository:
             "GET",
             "team_voice_profiles",
             params={
-                "select": "id,team_id,user_id,label,consented_at,revoked_at",
+                "select": (
+                    "id,team_id,user_id,label,consented_at,revoked_at,"
+                    "sample_object_path,sample_mime_type,sample_size_bytes,"
+                    "sample_sha256,sample_uploaded_at"
+                ),
                 "team_id": f"eq.{team_id}",
                 "user_id": f"eq.{user_id}",
             },

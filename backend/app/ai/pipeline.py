@@ -24,6 +24,42 @@ NON_RETRYABLE_CODES = {
     "TRANSCRIPT_TOO_LONG",
 }
 
+BUILTIN_TEMPLATE_CONTEXT: dict[str, dict[str, object]] = {
+    "general": {
+        "name": "기본 회의록",
+        "sections": [
+            {"key": "summary", "label": "회의 개요"},
+            {"key": "discussions", "label": "주요 논의사항"},
+            {"key": "decisions", "label": "결정사항"},
+            {"key": "action_items", "label": "액션아이템"},
+            {"key": "follow_up", "label": "후속 논의사항"},
+        ],
+        "writing_rules": "기업 실무 회의록 문체, 명사형·어구형 종결, 원문 근거 중심",
+    },
+    "project": {
+        "name": "프로젝트 회의",
+        "sections": [
+            {"key": "progress", "label": "진행 현황"},
+            {"key": "issues", "label": "주요 이슈"},
+            {"key": "solutions", "label": "해결 방안"},
+            {"key": "decisions", "label": "의사결정"},
+            {"key": "action_items", "label": "담당자별 후속 조치"},
+        ],
+        "writing_rules": "프로젝트 진행·이슈·대안·결정·후속 조치 중심",
+    },
+    "interview": {
+        "name": "인터뷰",
+        "sections": [
+            {"key": "overview", "label": "인터뷰 개요"},
+            {"key": "answers", "label": "주제별 핵심 답변"},
+            {"key": "qa", "label": "질의응답"},
+            {"key": "insights", "label": "주요 인사이트"},
+            {"key": "follow_up", "label": "후속 확인사항"},
+        ],
+        "writing_rules": "질문·답변의 흐름과 인터뷰이의 구체적 사례·조건·인사이트 보존",
+    },
+}
+
 
 class AnalysisService:
     def __init__(
@@ -178,6 +214,10 @@ class AnalysisService:
                     template = await quality_repository.get_template(UUID(meeting["template_id"]))
                 except AppError as exc:
                     self._log_optional_context_failure("template", meeting_id, exc)
+            builtin_template = BUILTIN_TEMPLATE_CONTEXT.get(
+                str(meeting.get("meeting_type") or "general"),
+                BUILTIN_TEMPLATE_CONTEXT["general"],
+            )
             context = {
                 "topic": meeting.get("topic", ""),
                 "meeting_type": meeting.get("meeting_type", "general"),
@@ -189,7 +229,7 @@ class AnalysisService:
                     "writing_rules": template.get("writing_rules", ""),
                 }
                 if template
-                else None,
+                else builtin_template,
                 "correction_persona": meeting.get("correction_persona", "general"),
                 "team_project_topic": (team or {}).get("project_topic", ""),
                 "confirmed_answers": [

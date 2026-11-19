@@ -158,6 +158,24 @@ class MeetingReviewResponse(BaseModel):
 class VoiceProfileRequest(BaseModel):
     consented: bool
     label: str = Field(default="", max_length=100)
+    sample_object_path: str | None = Field(default=None, max_length=500)
+    sample_mime_type: str | None = Field(default=None, max_length=100)
+    sample_size_bytes: int | None = Field(default=None, gt=0, le=104_857_600)
+    sample_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+
+
+class VoiceProfileUploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(pattern=r"^audio/(mpeg|mp4|wav|x-wav|webm|ogg)$")
+    size_bytes: int = Field(gt=0, le=104_857_600)
+    sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+
+
+class VoiceProfileUploadResponse(BaseModel):
+    bucket: str
+    path: str
+    token: str
+    signed_url: str
 
 
 class VoiceProfileResponse(BaseModel):
@@ -167,6 +185,11 @@ class VoiceProfileResponse(BaseModel):
     label: str
     consented_at: datetime | None
     revoked_at: datetime | None
+    sample_object_path: str | None = None
+    sample_mime_type: str | None = None
+    sample_size_bytes: int | None = None
+    sample_sha256: str | None = None
+    sample_uploaded_at: datetime | None = None
 
 
 class QualityOptionsResponse(BaseModel):

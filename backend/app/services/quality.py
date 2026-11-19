@@ -1,9 +1,10 @@
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.ai.analysis.base import AIProviderError, AnalysisProvider
 from app.core.errors import AppError
 from app.core.security import AuthenticatedUser
+from app.core.settings import Settings
 from app.db.quality_repository import QualityRepository
 from app.db.repositories import MeetFlowRepository
 from app.schemas.quality import (
@@ -24,8 +25,11 @@ from app.schemas.quality import (
     TranscriptCorrectionResult,
     VoiceProfileRequest,
     VoiceProfileResponse,
+    VoiceProfileUploadRequest,
+    VoiceProfileUploadResponse,
 )
 from app.services.authorization import AuthorizationService
+from app.storage.client import SupabaseStorageClient
 
 BUILTIN_TEMPLATES = [
     {
@@ -89,11 +93,15 @@ class QualityService:
         repository: MeetFlowRepository,
         user: AuthenticatedUser,
         provider: AnalysisProvider,
+        storage: SupabaseStorageClient | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.repository = repository
         self.quality = QualityRepository(repository.client)
         self.user = user
         self.provider = provider
+        self.storage = storage
+        self.settings = settings
         self.authorization = AuthorizationService(repository, user)
 
     async def options(self, team_id: UUID) -> QualityOptionsResponse:
@@ -257,10 +265,52 @@ class QualityService:
         self, team_id: UUID, payload: VoiceProfileRequest
     ) -> VoiceProfileResponse:
         await self.authorization.require_team_member(team_id)
+        if payload.sample_object_path:
+            expected_prefix = f"voice-profiles/{team_id}/{self.user.id}/"
+            if not payload.sample_object_path.startswith(expected_prefix):
+                raise AppError(
+                    400, "INVALID_VOICE_PROFILE_PATH", "음성 프로필 파일 경로가 올바르지 않습니다."
+                )
+            if (
+                not payload.sample_mime_type
+                or not payload.sample_size_bytes
+                or not payload.sample_sha256
+            ):
+                raise AppError(
+                    400,
+                    "VOICE_PROFILE_METADATA_REQUIRED",
+                    "음성 프로필 파일 정보가 부족합니다.",
+                )
         row = await self.quality.upsert_voice_profile(
-            team_id, self.user.id, payload.label.strip(), payload.consented
+            team_id,
+            self.user.id,
+            payload.label.strip(),
+            payload.consented,
+            payload.sample_object_path,
+            payload.sample_mime_type,
+            payload.sample_size_bytes,
+            payload.sample_sha256.lower() if payload.sample_sha256 else None,
         )
         return VoiceProfileResponse(**row)
+
+    async def create_voice_profile_upload_url(
+        self, team_id: UUID, payload: VoiceProfileUploadRequest
+    ) -> VoiceProfileUploadResponse:
+        await self.authorization.require_team_member(team_id)
+        if self.storage is None or self.settings is None:
+            raise AppError(503, "STORAGE_UNAVAILABLE", "음성 프로필 저장소를 사용할 수 없습니다.")
+        extension = payload.filename.replace(chr(92), "/").split("/")[-1].rsplit(".", 1)[-1].lower()
+        suffix = f".{extension}" if extension else ""
+        path = f"voice-profiles/{team_id}/{self.user.id}/{uuid4()}{suffix}"
+        signed_url, token = await self.storage.create_signed_upload(
+            self.settings.supabase_storage_bucket, path
+        )
+        return VoiceProfileUploadResponse(
+            bucket=self.settings.supabase_storage_bucket,
+            path=path,
+            token=token,
+            signed_url=signed_url,
+        )
 
     async def _managed_meeting(self, meeting_id: UUID) -> dict[str, Any]:
         meeting = await self.repository.get_meeting(meeting_id)

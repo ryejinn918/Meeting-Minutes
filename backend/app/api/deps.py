@@ -133,8 +133,10 @@ def get_quality_service(
     user: AuthenticatedUser = Depends(get_current_user),
     repository: MeetFlowRepository = Depends(get_repository),
     provider: AnalysisProvider = Depends(get_analysis_provider),
+    storage: SupabaseStorageClient = Depends(get_storage_client),
+    settings: Settings = Depends(get_settings),
 ) -> QualityService:
-    return QualityService(repository, user, provider)
+    return QualityService(repository, user, provider, storage, settings)
 
 
 def get_file_ingestion_service(

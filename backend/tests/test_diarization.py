@@ -3,6 +3,7 @@ from app.services.diarization import (
     format_diarized_transcript,
     merge_diarized_segments,
     offset_segments,
+    parse_labeled_transcript,
     speaker_labels,
 )
 
@@ -44,3 +45,16 @@ def test_overlapping_duplicate_segment_is_removed_and_timestamps_formatted() -> 
 
     assert len(merged) == 1
     assert format_diarized_transcript(merged, labels) == ("[00:09:58] 화자 1: 중복 발언입니다")
+
+
+def test_labeled_txt_transcript_creates_editable_speakers_and_ordered_offsets() -> None:
+    segments, labels = parse_labeled_transcript(
+        "참석자 1: 프로젝트 범위를 확인합니다.\n"
+        "세부 범위는 다음 회의에서 확정합니다.\n"
+        "참석자 2: 일정은 다음 주까지 검토가 필요합니다."
+    )
+
+    assert labels == {"txt:참석자 1": "참석자 1", "txt:참석자 2": "참석자 2"}
+    assert [segment.speaker_key for segment in segments] == ["txt:참석자 1", "txt:참석자 2"]
+    assert segments[0].text.endswith("확정합니다.")
+    assert segments[0].end <= segments[1].start

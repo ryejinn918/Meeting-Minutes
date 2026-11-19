@@ -40,6 +40,39 @@ class GPUWorkerService:
             file["storage_path"],
             self.settings.gpu_worker_download_ttl_seconds,
         )
+        voice_profiles: list[dict[str, object]] = []
+        meeting = await self.repository.get_meeting(UUID(job["meeting_id"]))
+        if meeting:
+            profiles, _ = await self.repository.client.request(
+                "GET",
+                "team_voice_profiles",
+                params={
+                    "select": "id,user_id,label,sample_object_path,sample_mime_type,sample_sha256",
+                    "team_id": f"eq.{meeting['team_id']}",
+                    "consented_at": "not.is.null",
+                    "revoked_at": "is.null",
+                    "sample_object_path": "not.is.null",
+                },
+            )
+            for profile in profiles:
+                sample_path = profile.get("sample_object_path")
+                if not isinstance(sample_path, str) or not sample_path:
+                    continue
+                sample_url = await self.storage.create_signed_download(
+                    self.settings.supabase_storage_bucket,
+                    sample_path,
+                    self.settings.gpu_worker_download_ttl_seconds,
+                )
+                voice_profiles.append(
+                    {
+                        "profile_id": profile["id"],
+                        "user_id": profile["user_id"],
+                        "label": profile.get("label") or "화자",
+                        "download_url": sample_url,
+                        "mime_type": profile.get("sample_mime_type") or "audio/mpeg",
+                        "sha256": profile.get("sample_sha256"),
+                    }
+                )
         return WorkerJob(
             job_id=job["id"],
             meeting_id=job["meeting_id"],
@@ -47,6 +80,7 @@ class GPUWorkerService:
             download_url=url,
             original_name=file["original_name"],
             mime_type=file["mime_type"],
+            voice_profiles=voice_profiles,
         )
 
     async def heartbeat(self, job_id: UUID, worker_id: UUID) -> bool:
@@ -74,7 +108,7 @@ class GPUWorkerService:
         ]
         labels = speaker_labels(diarized)
         text = format_diarized_transcript(diarized, labels) if diarized else payload.text
-        await self.repository.client.request(
+        result, _ = await self.repository.client.request(
             "POST",
             "rpc/complete_gpu_transcription_job",
             json={
@@ -87,6 +121,69 @@ class GPUWorkerService:
                 "target_usage": payload.usage,
             },
         )
+        if payload.speaker_candidates and result:
+            transcript_id = result if isinstance(result, str) else result.get("transcript_id")
+            if transcript_id:
+                transcript_rows, _ = await self.repository.client.request(
+                    "GET",
+                    "meeting_transcripts",
+                    params={"select": "meeting_id", "id": f"eq.{transcript_id}"},
+                )
+                allowed_ids: set[str] = set()
+                if transcript_rows:
+                    meeting_row = await self.repository.get_meeting(
+                        UUID(transcript_rows[0]["meeting_id"])
+                    )
+                    if meeting_row:
+                        profile_rows, _ = await self.repository.client.request(
+                            "GET", "team_voice_profiles", params={
+                                "select": "user_id",
+                                "team_id": f"eq.{meeting_row['team_id']}",
+                                "consented_at": "not.is.null", "revoked_at": "is.null",
+                                "sample_object_path": "not.is.null",
+                            }
+                        )
+                        allowed_ids = {str(row["user_id"]) for row in profile_rows}
+                speakers, _ = await self.repository.client.request(
+                    "GET",
+                    "transcript_speakers",
+                    params={
+                        "select": "id,speaker_key",
+                        "transcript_id": f"eq.{transcript_id}",
+                    },
+                )
+                by_key = {item.get("speaker_key"): item for item in speakers}
+                for candidate in payload.speaker_candidates:
+                    if str(candidate.candidate_user_id) not in allowed_ids:
+                        continue
+                    speaker = by_key.get(candidate.speaker)
+                    if not speaker:
+                        continue
+                    profile_rows, _ = await self.repository.client.request(
+                        "GET",
+                        "profiles",
+                        params={
+                            "select": "display_name",
+                            "id": f"eq.{candidate.candidate_user_id}",
+                        },
+                    )
+                    display_name = (
+                        profile_rows[0].get("display_name")
+                        if profile_rows and profile_rows[0].get("display_name")
+                        else candidate.speaker
+                    )
+                    await self.repository.client.request(
+                        "PATCH",
+                        "transcript_speakers",
+                        params={"id": f"eq.{speaker['id']}"},
+                        json={
+                            "candidate_user_id": str(candidate.candidate_user_id),
+                            "candidate_confidence": candidate.confidence,
+                            "candidate_reason": candidate.reason,
+                            "display_name": display_name,
+                        },
+                        prefer="return=minimal",
+                    )
 
     async def fail(self, job_id: UUID, worker_id: UUID, code: str, message: str) -> None:
         value, _ = await self.repository.client.request(

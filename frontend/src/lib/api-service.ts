@@ -159,8 +159,15 @@ export const apiService = {
     apiRequest<{ batch_id: string; changed_count: number }>(`/api/v1/meetings/${meetingId}/speaker-edits/${batchId}/undo`, { method: "POST" }),
   reviewMeeting: (meetingId: string, status: "review_required" | "approved" | "rejected", note = "") =>
     apiRequest<{ status: string; note: string; version: number; created_at: string }>(`/api/v1/meetings/${meetingId}/review`, { method: "POST", body: JSON.stringify({ status, note }) }),
-  registerVoiceProfile: (teamId: string, consented: boolean, label = "") =>
-    apiRequest<{ id: string; team_id: string; user_id: string; label: string; consented_at: string | null; revoked_at: string | null }>(`/api/v1/teams/${teamId}/voice-profile`, { method: "PUT", body: JSON.stringify({ consented, label }) }),
+  registerVoiceProfile: (teamId: string, consented: boolean, label = "", sample?: { sample_object_path: string; sample_mime_type: string; sample_size_bytes: number; sample_sha256: string }) =>
+    apiRequest<{ id: string; team_id: string; user_id: string; label: string; consented_at: string | null; revoked_at: string | null }>(`/api/v1/teams/${teamId}/voice-profile`, { method: "PUT", body: JSON.stringify({ consented, label, ...sample }) }),
+  createVoiceProfileUploadUrl: (teamId: string, input: { filename: string; content_type: string; size_bytes: number; sha256: string }) =>
+    apiRequest<{ bucket: string; path: string; token: string; signed_url: string }>(`/api/v1/teams/${teamId}/voice-profile/upload-url`, { method: "POST", body: JSON.stringify(input) }),
+  async uploadVoiceProfileFile(input: { bucket: string; path: string; token: string }, file: File): Promise<void> {
+    if (!supabase) throw new Error("음성 프로필 저장 설정을 확인해 주세요.");
+    const { error } = await supabase.storage.from(input.bucket).uploadToSignedUrl(input.path, input.token, file, { contentType: file.type, upsert: false });
+    if (error) throw new Error("음성 프로필을 업로드하지 못했습니다.");
+  },
 };
 
 async function uploadResumable(input: UploadUrlResponse, file: File): Promise<void> {

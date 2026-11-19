@@ -16,6 +16,16 @@ class WorkerJob(BaseModel):
     download_url: str
     original_name: str
     mime_type: str
+    voice_profiles: list["WorkerVoiceProfile"] = Field(default_factory=list)
+
+
+class WorkerVoiceProfile(BaseModel):
+    profile_id: UUID
+    user_id: UUID
+    label: str = Field(min_length=1, max_length=100)
+    download_url: str
+    mime_type: str = "audio/mpeg"
+    sha256: str | None = None
 
 
 class WorkerClaimResponse(BaseModel):
@@ -41,6 +51,13 @@ class WorkerSegment(BaseModel):
         return self
 
 
+class WorkerSpeakerCandidate(BaseModel):
+    speaker: str = Field(min_length=1, max_length=100)
+    candidate_user_id: UUID
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(default="voice_embedding", max_length=200)
+
+
 class WorkerCompleteRequest(BaseModel):
     worker_id: UUID
     text: str = Field(min_length=1, max_length=2_000_000)
@@ -48,6 +65,7 @@ class WorkerCompleteRequest(BaseModel):
     model: str = Field(min_length=1, max_length=100)
     segments: list[WorkerSegment] = Field(default_factory=list, max_length=50_000)
     usage: dict[str, Any] = Field(default_factory=dict)
+    speaker_candidates: list[WorkerSpeakerCandidate] = Field(default_factory=list, max_length=200)
 
 
 class WorkerFailRequest(BaseModel):

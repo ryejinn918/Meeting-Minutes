@@ -21,6 +21,8 @@ from app.schemas.quality import (
     TranscriptCorrectionResult,
     VoiceProfileRequest,
     VoiceProfileResponse,
+    VoiceProfileUploadRequest,
+    VoiceProfileUploadResponse,
 )
 from app.services.quality import QualityService
 
@@ -152,3 +154,12 @@ async def register_voice_profile(
     service: QualityService = Depends(get_quality_service),
 ) -> VoiceProfileResponse:
     return await service.register_voice_profile(team_id, payload)
+
+
+@router.post("/teams/{team_id}/voice-profile/upload-url", response_model=VoiceProfileUploadResponse)
+async def create_voice_profile_upload_url(
+    team_id: UUID,
+    payload: VoiceProfileUploadRequest,
+    service: QualityService = Depends(get_quality_service),
+) -> VoiceProfileUploadResponse:
+    return await service.create_voice_profile_upload_url(team_id, payload)

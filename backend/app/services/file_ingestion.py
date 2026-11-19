@@ -37,6 +37,7 @@ from app.services.diarization import (
     format_diarized_transcript,
     merge_diarized_segments,
     offset_segments,
+    parse_labeled_transcript,
     serialize_segments,
     speaker_labels,
 )
@@ -353,6 +354,7 @@ class FileIngestionService:
                     language = None
                     provider = None
                     model = None
+                    document_segments, document_labels = parse_labeled_transcript(text)
             transcript = await self.admin_repository.create_generated_transcript(
                 meeting_id=meeting_id,
                 user_id=UUID(file["uploaded_by"]),
@@ -382,6 +384,28 @@ class FileIngestionService:
                             "text": segment.text,
                         }
                         for segment in result.segments
+                    ],
+                )
+            elif job["job_type"] != "transcribe" and document_segments:
+                await self.admin_repository.create_transcript_diarization(
+                    meeting_id=meeting_id,
+                    transcript_id=UUID(transcript["id"]),
+                    speakers=[
+                        {
+                            "speaker_key": key,
+                            "provider_label": key.removeprefix("txt:"),
+                            "display_name": label,
+                        }
+                        for key, label in document_labels.items()
+                    ],
+                    segments=[
+                        {
+                            "speaker_key": segment.speaker_key,
+                            "start": segment.start,
+                            "end": segment.end,
+                            "text": segment.text,
+                        }
+                        for segment in document_segments
                     ],
                 )
             latest = await self.admin_repository.get_meeting(meeting_id)

@@ -62,6 +62,51 @@ def speaker_labels(
     return labels
 
 
+def parse_labeled_transcript(text: str) -> tuple[list[DiarizedSegment], dict[str, str]]:
+    """Parse speaker-prefixed TXT transcripts into editable speaker segments.
+
+    Document transcripts do not contain real audio timestamps, so synthetic
+    sequential offsets are used only to preserve ordering in the existing
+    diarization UI. The source speaker label remains the editable display name.
+    """
+    pattern = re.compile(
+        r"^\s*(?P<label>(?:참석자|화자|speaker)\s*[0-9A-Za-z가-힣_-]+)"
+        r"\s*[:：]\s*(?P<body>.+?)\s*$",
+        re.IGNORECASE,
+    )
+    segments: list[DiarizedSegment] = []
+    labels: dict[str, str] = {}
+    current: DiarizedSegment | None = None
+    cursor = 0.0
+    for raw_line in text.replace("\r\n", "\n").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = pattern.match(line)
+        if match:
+            if current is not None:
+                segments.append(current)
+                cursor = current.end
+            label = match.group("label").strip()
+            body = match.group("body").strip()
+            key = f"txt:{label.casefold()}"
+            duration = max(1.0, round(len(body) / 8, 3))
+            current = DiarizedSegment(key, label, cursor, cursor + duration, body)
+            labels[key] = label
+        elif current is not None:
+            continuation = f"{current.text} {line}".strip()
+            current = DiarizedSegment(
+                current.speaker_key,
+                current.provider_speaker,
+                current.start,
+                current.end + max(0.5, round(len(line) / 8, 3)),
+                continuation,
+            )
+    if current is not None:
+        segments.append(current)
+    return segments, labels
+
+
 def format_diarized_transcript(
     segments: list[DiarizedSegment],
     labels: dict[str, str],

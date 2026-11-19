@@ -46,7 +46,6 @@ export function MeetingNewPage() {
   const [topic, setTopic] = useState("");
   const [persona, setPersona] = useState("");
   const meetingType = "general" as const;
-  const [templateId, setTemplateId] = useState("");
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [mode, setMode] = useState<InputMode>("text");
   const [file, setFile] = useState<File | null>(null);
@@ -58,15 +57,10 @@ export function MeetingNewPage() {
     queryFn: () => apiService.getTeam(teamId),
     enabled: Boolean(teamId),
   });
-  const qualityQuery = useQuery({
-    queryKey: queryKeys.qualityOptions(teamId),
-    queryFn: () => apiService.getQualityOptions(teamId),
-    enabled: Boolean(teamId),
-  });
   const metadata = {
     topic: topic.trim(),
     meeting_type: meetingType,
-    template_id: templateId.startsWith("builtin-") || !templateId ? null : templateId,
+    template_id: null,
     correction_persona: persona.trim(),
     attendees: attendeeIds.map((user_id) => ({ user_id })),
     metadata_confirmed: true,
@@ -160,9 +154,6 @@ export function MeetingNewPage() {
         <label className="block text-sm font-semibold text-slate-700">회의 주제<Input className="mt-2" maxLength={500} onChange={(event) => setTopic(event.target.value)} placeholder="이번 회의에서 다룰 핵심 주제" value={topic} /></label>
         <label className="block text-sm font-semibold text-slate-700">회의 날짜<Input className="mt-2" onChange={(event) => setDate(event.target.value)} type="date" value={date} /></label>
         <label className="block text-sm font-semibold text-slate-700">전사 교정 페르소나<Input className="mt-2" maxLength={80} onChange={(event) => setPersona(event.target.value)} placeholder="예: 한국어 기술 문서에 익숙한 시니어 AI 개발자" value={persona} /><span className="mt-1 block text-xs font-normal leading-5 text-slate-500">선택 입력입니다. 비워두면 팀 프로젝트 주제만 참고하고, 명확한 전사 오류만 보수적으로 교정합니다.</span></label>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-semibold text-slate-700 sm:col-span-2">회의록 템플릿<select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setTemplateId(event.target.value)} value={templateId}><option value="">기본 템플릿</option>{qualityQuery.data?.templates.filter((item) => item.meeting_type === "project" || item.meeting_type === "interview").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        </div>
         {teamQuery.data?.members.length ? <fieldset><legend className="text-sm font-semibold text-slate-700">참석자</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{teamQuery.data.members.map((member) => <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm" key={member.id}><input checked={attendeeIds.includes(member.id)} onChange={(event) => setAttendeeIds((current) => event.target.checked ? [...current, member.id] : current.filter((id) => id !== member.id))} type="checkbox" />{member.name}</label>)}</div></fieldset> : null}
         <p className="text-xs leading-5 text-slate-500">입력한 회의 정보와 참석자를 확인한 상태로 저장됩니다. 나중에 상세 화면에서 수정할 수 있어요.</p>
       </CardContent></Card>

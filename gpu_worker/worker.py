@@ -107,6 +107,80 @@ def load_diarization_pipeline(pipeline_type: Any) -> Any:
     return pipeline
 
 
+def load_embedding_model(device: str) -> Any:
+    """Load the optional pyannote speaker-embedding model from the worker cache."""
+    import torch
+    from pyannote.audio import Inference, Model
+
+    configured = os.getenv("PYANNOTE_EMBEDDING_MODEL_PATH", "").strip()
+    cache_dir = model_cache_dir("PYANNOTE_EMBEDDING_CACHE_DIR")
+    checkpoint: str | Path = Path(configured).expanduser() if configured else "pyannote/embedding"
+    if isinstance(checkpoint, Path):
+        config = checkpoint / "config.yaml" if checkpoint.is_dir() else checkpoint
+        if not config.is_file():
+            raise ModelCacheError("Configured pyannote embedding model does not exist")
+        model = Model.from_pretrained(config)
+    else:
+        kwargs: dict[str, Any] = {"token": required("HF_TOKEN")}
+        if cache_dir:
+            kwargs["cache_dir"] = str(cache_dir)
+        model = Model.from_pretrained(checkpoint, **kwargs)
+    if model is None:
+        raise ModelCacheError("The pyannote embedding model could not be loaded")
+    return Inference(model, window="whole", device=torch.device(device))
+
+
+def _embedding(inference: Any, samples: Any) -> Any:
+    import numpy as np
+    import torch
+
+    if samples is None or len(samples) < 1600:
+        return None
+    value = inference({"waveform": torch.from_numpy(np.asarray(samples, dtype=np.float32)).reshape(1, -1), "sample_rate": 16000})
+    vector = np.asarray(value, dtype=np.float32).reshape(-1)
+    norm = float(np.linalg.norm(vector))
+    return vector / norm if norm else None
+
+
+def match_voice_profiles(
+    audio: Any, segments: list[dict[str, Any]], profiles: list[dict[str, Any]], inference: Any
+) -> list[dict[str, Any]]:
+    """Return only unambiguous candidates; confidence stays in the backend payload."""
+    import numpy as np
+
+    profile_vectors: list[tuple[dict[str, Any], Any]] = []
+    import whisperx
+
+    for profile in profiles:
+        path = profile.get("_local_path")
+        if not path:
+            continue
+        try:
+            profile_audio = whisperx.load_audio(str(path))
+            vector = _embedding(inference, profile_audio)
+            if vector is not None:
+                profile_vectors.append((profile, vector))
+        except Exception as exc:  # noqa: BLE001 - one bad sample must not fail STT
+            logger.warning("voice profile embedding skipped profile_id=%s error_type=%s", profile.get("profile_id"), type(exc).__name__)
+    by_speaker: dict[str, list[tuple[float, float, float]]] = {}
+    for segment in segments:
+        by_speaker.setdefault(segment["speaker"], []).append((segment["start"], segment["end"], 0.0))
+    threshold = float(os.getenv("WHISPERX_SPEAKER_MATCH_THRESHOLD", "0.65"))
+    margin = float(os.getenv("WHISPERX_SPEAKER_MATCH_MARGIN", "0.08"))
+    matches: list[dict[str, Any]] = []
+    for speaker, ranges in by_speaker.items():
+        chunks = [audio[max(0, int(start * 16000)) : min(len(audio), int(end * 16000))] for start, end, _ in ranges]
+        sample = np.concatenate(chunks)[: 30 * 16000] if chunks else None
+        vector = _embedding(inference, sample)
+        if vector is None:
+            continue
+        ranked = sorted(((float(np.dot(vector, candidate)), profile) for profile, candidate in profile_vectors), reverse=True, key=lambda item: item[0])
+        if not ranked or ranked[0][0] < threshold or (len(ranked) > 1 and ranked[0][0] - ranked[1][0] < margin):
+            continue
+        matches.append({"speaker": speaker, "candidate_user_id": ranked[0][1]["user_id"], "confidence": max(0.0, min(1.0, ranked[0][0])), "reason": "voice_embedding"})
+    return matches
+
+
 def diarization_to_dataframe(diarized: Any) -> Any:
     """Convert pyannote 4.x output to the dataframe expected by WhisperX.
 
@@ -138,7 +212,7 @@ def diarization_to_dataframe(diarized: Any) -> Any:
     return pd.DataFrame(rows, columns=["segment", "start", "end", "speaker"])
 
 
-def transcribe(path: Path) -> dict[str, Any]:
+def transcribe(path: Path, profiles: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     import torch
     import whisperx
     from pyannote.audio import Pipeline
@@ -165,12 +239,22 @@ def transcribe(path: Path) -> dict[str, Any]:
         for item in result["segments"]
         if str(item.get("text", "")).strip()
     ]
+    candidates: list[dict[str, Any]] = []
+    if profiles:
+        try:
+            inference = load_embedding_model(device)
+            candidates = match_voice_profiles(audio, segments, profiles, inference)
+        except ModelCacheError as exc:
+            logger.warning("voice profile matching unavailable: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - matching is optional enrichment
+            logger.warning("voice profile matching skipped error_type=%s", type(exc).__name__)
     return {
         "text": "\n".join(item["text"] for item in segments),
         "language": result.get("language"),
         "model": os.getenv("WHISPERX_MODEL", "large-v3"),
         "segments": segments,
         "usage": {"segment_count": len(segments)},
+        "speaker_candidates": candidates,
     }
 
 
@@ -219,7 +303,16 @@ async def main() -> None:
                         with path.open("wb") as handle:
                             async for chunk in response.aiter_bytes(1024 * 1024):
                                 handle.write(chunk)
-                    result = await asyncio.to_thread(transcribe, path)
+                    profiles = claimed.get("voice_profiles") or []
+                    for profile in profiles:
+                        profile_path = Path(directory) / f"voice-{profile['profile_id']}{Path(profile.get('mime_type', '')).suffix or '.audio'}"
+                        async with client.stream("GET", profile["download_url"], headers={}) as profile_response:
+                            profile_response.raise_for_status()
+                            with profile_path.open("wb") as handle:
+                                async for chunk in profile_response.aiter_bytes(1024 * 1024):
+                                    handle.write(chunk)
+                        profile["_local_path"] = str(profile_path)
+                    result = await asyncio.to_thread(transcribe, path, profiles)
                 result["worker_id"] = str(worker_id)
                 response = await client.post(
                     f"{base}/api/v1/workers/jobs/{job_id}/complete", json=result

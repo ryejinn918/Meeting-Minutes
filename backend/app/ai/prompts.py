@@ -88,6 +88,22 @@ STRICT_MEETING_REPORT_STYLE = "\n".join(
     ]
 )
 
+SPEAKER_ATTRIBUTION_GUIDANCE = (
+    "발언자 보존 규칙: 전사 원문에 발언자 이름이나 화자 라벨이 명시된 경우, 해당 발언자의 "
+    "제안·우려·질문·반대 의견·결론을 관련 세부 불릿에 자연스럽게 포함하세요. "
+    "예: '김민지는 파일럿 범위를 단계적으로 시작하는 방안을 제안'처럼 기록하세요. "
+    "원문에 없는 이름을 추측하거나 화자와 실제 인물을 임의로 연결하지 마세요. "
+    "발언자가 불명확하면 주어를 생략하고 논의 내용만 정리하세요."
+)
+
+EOM_STYLE_GUIDANCE = (
+    "문체 고정 규칙: 핵심 요약·안건별 불릿·결정사항·후속 논의·액션아이템을 "
+    "모두 자연스러운 음슴체/어구형으로 작성하세요. "
+    "'~함', '~필요', '~검토', '~예정', '~확인', '~가능', '~어려움', '~하기로 함' 등 "
+    "의미에 맞는 종결을 사용하고, "
+    "'~했습니다', '~합니다', '~되었습니다' 같은 서술형 종결은 사용하지 마세요."
+)
+
 
 def build_analysis_prompt(
     transcript: str,
@@ -100,7 +116,7 @@ def build_analysis_prompt(
     )
     return (
         f"{context_block}"
-        f"{STRICT_MEETING_REPORT_STYLE}\n\n"
+        f"{STRICT_MEETING_REPORT_STYLE}\n{SPEAKER_ATTRIBUTION_GUIDANCE}\n{EOM_STYLE_GUIDANCE}\n\n"
         f"회의 날짜: {meeting_date.isoformat()}\n\n"
         "다음 회의 전문을 핵심 요약, 주요 논의사항, 확정된 결정사항, "
         "액션아이템, 후속 논의사항으로 구조화하세요.\n"
@@ -126,7 +142,7 @@ def build_detail_expansion_prompt(
         f"Meeting context (JSON): {json.dumps(context, ensure_ascii=False)}\n\n" if context else ""
     )
     return (
-        f"{context_block}{STRICT_MEETING_REPORT_STYLE}\n\n"
+        f"{context_block}{STRICT_MEETING_REPORT_STYLE}\n{SPEAKER_ATTRIBUTION_GUIDANCE}\n{EOM_STYLE_GUIDANCE}\n\n"
         "다음은 1차 회의록 초안입니다. 긴 전사에서는 이 초안을 요약하는 것이 아니라 "
         "전체 원문을 다시 대조하여 실제로 언급된 고유한 의견·사례·수치·일정·제약·대안을 "
         "가능한 한 빠짐없이 보존하세요. 반복 발언만 통합하고, 서로 다른 관점이나 논의 흐름은 "

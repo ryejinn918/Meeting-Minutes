@@ -20,7 +20,12 @@ Windows 사용자 또는 워커 전용 실행 환경에는 다음을 등록합�
 - `WHISPERX_ASR_CACHE_DIR`: faster-whisper Hub 캐시 루트
 - `WHISPERX_ALIGNMENT_CACHE_DIR`: 한국어 alignment Hub 캐시 루트
 - `PYANNOTE_MODEL_PATH`: Community-1 snapshot 디렉터리 또는 `config.yaml` 경로
+- `PYANNOTE_EMBEDDING_MODEL_PATH`: 음성 프로필 매칭용 `pyannote/embedding` 로컬 snapshot 경로(선택)
+- `PYANNOTE_EMBEDDING_CACHE_DIR`: 위 모델의 전용 Hugging Face 캐시 경로(선택)
+- `WHISPERX_SPEAKER_MATCH_THRESHOLD` / `WHISPERX_SPEAKER_MATCH_MARGIN`: 자동 후보를 확정 후보로 보낼 최소 유사도와 모호성 간격
 - `WHISPERX_LOCAL_FILES_ONLY=true`: 위 로컬 캐시만 사용하고 모델 다운로드를 금지
+
+음성 프로필 매칭은 임베딩 모델과 동의된 샘플이 모두 있을 때만 실행됩니다. 모델을 사용할 수 없거나 유사도가 모호하면 기존 `화자 1`, `화자 2` 라벨을 유지하며, 유사도·신뢰도 숫자는 사용자 화면에 표시하지 않습니다.
 
 오프라인 모드에서는 세 캐시 경로를 모두 지정해야 합니다. 경로가 없거나 Community-1의
 `config.yaml`을 찾을 수 없으면 워커는 네트워크 다운로드로 전환하지 않고 해당 작업을
